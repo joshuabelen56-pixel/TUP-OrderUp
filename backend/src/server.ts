@@ -5,8 +5,8 @@ import express, {
 } from "express";
 
 import sharp from "sharp";
-import axios from "axios";
 import cors from "cors";
+
 
 import {
   MongoClient,
@@ -25,36 +25,6 @@ import nodemailer from "nodemailer";
 import { createWorker } from "tesseract.js";
 
 dotenv.config();
-
-// // =====================================================
-// // APP
-// // =====================================================
-// const verifyTurnstile = async (token: string, ip?: string) => {
-//   try {
-//     const response = await axios.post(
-//       "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-//       new URLSearchParams({
-//         secret: process.env.TURNSTILE_SECRET_KEY || "",
-//         response: token,
-//         ...(ip ? { remoteip: ip } : {}),
-//       }),
-//       {
-//         headers: {
-//           "Content-Type": "application/x-www-form-urlencoded",
-//         },
-//       }
-//     );
-
-//     return response.data;
-//   } catch (error) {
-//     console.error("Turnstile verification error:", error);
-//     return {
-//       success: false,
-//     };
-//   }
-// };
-
-
 
 const app = express();
 app.use(express.json());
@@ -520,6 +490,8 @@ function normalizeGovernmentText(value: string): string {
 
 // =====================================================
 // GOVERNMENT ID NAME MATCH
+// (Kept for logging purposes only — no longer required
+// for the final verification result.)
 // =====================================================
 
 function nameExistsInOCR(
@@ -582,6 +554,8 @@ function governmentIdNumberExistsInOCR(
 
 // =====================================================
 // GOVERNMENT ID TYPE NORMALIZATION
+// (Kept for logging purposes only — no longer required
+// for the final verification result.)
 // =====================================================
 
 function normalizeGovernmentIdType(
@@ -598,6 +572,8 @@ function normalizeGovernmentIdType(
 
 // =====================================================
 // GOVERNMENT ID TYPE MATCH
+// (Kept for logging purposes only — no longer required
+// for the final verification result.)
 // =====================================================
 
 function governmentIdTypeExistsInOCR(
@@ -685,12 +661,8 @@ function governmentIdTypeExistsInOCR(
 }
 
 // =====================================================
-// FIND TUP ID IN OCR TEXT
-// =====================================================
-
-// =====================================================
 // FIND TUP ID IN OCR
-// TUPC-24-0498 
+// TUPC-24-0498
 // =====================================================
 
 function findTupIdInOCR(ocrText: string, enteredTupId: string): boolean {
@@ -703,9 +675,8 @@ function findTupIdInOCR(ocrText: string, enteredTupId: string): boolean {
     .toUpperCase()
     .replace(/\s+/g, " ");
 
-  // Expected format:
-  // TUPC-24-0498
-  const tupIdPattern = /\bTUPC\s*[-:]?\s*(\d{2})\s*[-:]?\s*(\d{4})\b/i;
+  // Tolerate common OCR misreads of "C" as "G" (or "O") in "TUPC"
+  const tupIdPattern = /\bTUP[CGO]\s*[-:]?\s*(\d{2})\s*[-:]?\s*(\d{4})\b/i;
 
   const match = text.match(tupIdPattern);
 
@@ -713,6 +684,7 @@ function findTupIdInOCR(ocrText: string, enteredTupId: string): boolean {
     return false;
   }
 
+  // Always normalize back to TUPC- format regardless of what OCR read
   const extractedTupId = `TUPC-${match[1]}-${match[2]}`;
 
   return extractedTupId === entered;
@@ -1221,6 +1193,13 @@ const id =
 //   governmentIdFrontPhoto
 //   governmentIdBackPhoto
 //
+// NOTE ON VERIFICATION (UPDATED):
+// OCR verification is now based on the ID NUMBER ONLY.
+// Name matching frequently fails because OCR often can't
+// read full names reliably, so name/type checks are kept
+// only for logging/reference and no longer block
+// registration.
+//
 // =====================================================
 
 
@@ -1696,6 +1675,7 @@ if (
 
   // =================================================
   // TUP ID OCR VERIFICATION
+  // (ID NUMBER ONLY)
   // =================================================
 
   console.log("=================================");
@@ -1708,29 +1688,60 @@ if (
         tupIdFrontFile.buffer
       );
 
+    const firstNameMatched =
+      nameExistsInOCR(
+        String(firstName),
+        ocrText
+      );
+
+    const lastNameMatched =
+      nameExistsInOCR(
+        String(lastName),
+        ocrText
+      );
+
     const tupIdMatched =
       findTupIdInOCR(
         ocrText,
         cleanTupId
       );
 
-    if (!tupIdMatched) {
+    // OR LOGIC: kahit isa lang sa tatlo ang match, papasa na
+    const verified =
+      firstNameMatched ||
+      lastNameMatched ||
+      tupIdMatched;
+
+    console.log("=================================");
+    console.log("STUDENT ID OCR MATCH RESULT");
+    console.log("FIRST NAME MATCH:", firstNameMatched);
+    console.log("LAST NAME MATCH:", lastNameMatched);
+    console.log("TUP ID MATCH:", tupIdMatched);
+    console.log("FINAL VERIFIED (OR logic):", verified);
+    console.log("=================================");
+
+    if (!verified) {
       console.log(
-        "❌ TUP ID OCR MATCH FAILED"
+        "❌ STUDENT ID OCR MATCH FAILED — none of the 3 fields matched"
       );
 
       return res.status(400).json({
         message:
-          "TUP ID number does not match the uploaded TUP ID.",
+          "None of your details (first name, last name, or TUP ID number) could be matched on the uploaded TUP ID.",
         verification: {
           type: "TUP_ID_OCR",
           matched: false,
+          matches: {
+            firstName: firstNameMatched,
+            lastName: lastNameMatched,
+            idNumber: tupIdMatched,
+          },
         },
       });
     }
 
     console.log(
-      "✅ TUP ID OCR MATCH SUCCESS"
+      "✅ STUDENT ID OCR MATCH SUCCESS"
     );
 
   } catch (ocrError) {
@@ -1828,6 +1839,7 @@ if (needsGovernmentID) {
 
   // =================================================
 // GOVERNMENT ID OCR VERIFICATION
+// (ID NUMBER ONLY)
 // =================================================
 
 if (
@@ -1882,7 +1894,7 @@ if (
     );
 
     // ---------------------------------------------
-    // FIRST NAME
+    // FIRST NAME (LOGGING ONLY — NOT REQUIRED)
     // ---------------------------------------------
 
     const firstNameMatched =
@@ -1892,7 +1904,7 @@ if (
       );
 
     // ---------------------------------------------
-    // LAST NAME
+    // LAST NAME (LOGGING ONLY — NOT REQUIRED)
     // ---------------------------------------------
 
     const lastNameMatched =
@@ -1902,7 +1914,7 @@ if (
       );
 
     // ---------------------------------------------
-    // ID TYPE
+    // ID TYPE (LOGGING ONLY — NOT REQUIRED)
     // ---------------------------------------------
 
     const idTypeMatched =
@@ -1912,7 +1924,7 @@ if (
       );
 
     // ---------------------------------------------
-    // ID NUMBER
+    // ID NUMBER (THE ONLY REQUIRED CHECK)
     // ---------------------------------------------
 
     const idNumberMatched =
@@ -1922,22 +1934,11 @@ if (
       );
 
     // ---------------------------------------------
-    // GOVERNMENT ID MATCH
-    // TYPE + NUMBER
-    // ---------------------------------------------
-
-    const governmentIdMatched =
-      idTypeMatched &&
-      idNumberMatched;
-
-    // ---------------------------------------------
-    // FINAL 3-WAY VERIFICATION
+    // FINAL VERIFICATION — ID NUMBER ONLY
     // ---------------------------------------------
 
     const verified =
-      firstNameMatched &&
-      lastNameMatched &&
-      governmentIdMatched;
+      idNumberMatched;
 
     console.log(
       "================================="
@@ -1948,28 +1949,23 @@ if (
     );
 
     console.log(
-      "FIRST NAME:",
+      "FIRST NAME (info only):",
       firstNameMatched
     );
 
     console.log(
-      "LAST NAME:",
+      "LAST NAME (info only):",
       lastNameMatched
     );
 
     console.log(
-      "ID TYPE:",
+      "ID TYPE (info only):",
       idTypeMatched
     );
 
     console.log(
-      "ID NUMBER:",
+      "ID NUMBER (REQUIRED):",
       idNumberMatched
-    );
-
-    console.log(
-      "GOVERNMENT ID:",
-      governmentIdMatched
     );
 
     console.log(
@@ -1987,40 +1983,16 @@ if (
 
     if (!verified) {
 
-      const failedChecks: string[] = [];
-
-      if (!firstNameMatched) {
-        failedChecks.push(
-          "First Name"
-        );
-      }
-
-      if (!lastNameMatched) {
-        failedChecks.push(
-          "Last Name"
-        );
-      }
-
-      if (!idTypeMatched) {
-        failedChecks.push(
-          "Government ID Type"
-        );
-      }
-
-      if (!idNumberMatched) {
-        failedChecks.push(
-          "Government ID Number"
-        );
-      }
-
       return res.status(400).json({
 
         verified: false,
 
         message:
-          "Seller government ID verification failed.",
+          "Seller government ID verification failed. The ID number could not be found on the uploaded ID.",
 
-        failedChecks,
+        failedChecks: [
+          "Government ID Number",
+        ],
 
         matches: {
           firstName:
@@ -2034,9 +2006,6 @@ if (
 
           idNumber:
             idNumberMatched,
-
-          governmentId:
-            governmentIdMatched,
         },
 
       });
@@ -2452,72 +2421,6 @@ return res.status(201).json({
   }),
 });
 
-
-console.log(
-  "================================="
-);
-
-console.log(
-  "REGISTRATION SUCCESS"
-);
-
-console.log(
-  "USER ID:",
-  result.insertedId
-);
-
-console.log(
-  "ACCOUNT TYPE:",
-  cleanAccountType
-);
-
-console.log(
-  "AFFILIATION:",
-  cleanAffiliation
-);
-
-console.log(
-  "ACCOUNT STATUS:",
-  accountStatus
-);
-
-if (
-  cleanAffiliation === "Student"
-) {
-  console.log(
-    "GSFE EMAIL:",
-    cleanGsfeEmail
-  );
-
-  console.log(
-    "TUP ID:",
-    cleanTupId
-  );
-}
-
-console.log(
-  "================================="
-);
-
-
-// =================================================
-// RESPONSE
-// =================================================
-
-return res.status(201).json({
-
-  message:
-    "Registration successful.",
-
-  user:
-    buildSafeUser({
-      ...newUser,
-      _id:
-        result.insertedId,
-    }),
-
-  });
-
     } catch (error) {
 
       console.error(
@@ -2553,6 +2456,7 @@ return res.status(201).json({
 // =====================================================
 // VERIFY GOVERNMENT ID
 // FACULTY / STAFF / OTHERS ONLY
+// (ID NUMBER ONLY)
 // =====================================================
 
 app.post(
@@ -2755,7 +2659,7 @@ app.post(
       );
 
       // -------------------------------------------------
-      // FIRST NAME MATCH
+      // FIRST NAME MATCH (LOGGING ONLY — NOT REQUIRED)
       // -------------------------------------------------
 
       const firstNameMatched =
@@ -2765,7 +2669,7 @@ app.post(
         );
 
       // -------------------------------------------------
-      // LAST NAME MATCH
+      // LAST NAME MATCH (LOGGING ONLY — NOT REQUIRED)
       // -------------------------------------------------
 
       const lastNameMatched =
@@ -2774,12 +2678,8 @@ app.post(
           combinedOCR
         );
 
-      // -------------------------------------------------
-      // GOVERNMENT ID NUMBER MATCH
-      // -------------------------------------------------
-
 // -------------------------------------------------
-// GOVERNMENT ID TYPE MATCH
+// GOVERNMENT ID TYPE MATCH (LOGGING ONLY — NOT REQUIRED)
 // -------------------------------------------------
 
 const idTypeMatched =
@@ -2789,7 +2689,7 @@ const idTypeMatched =
   );
 
 // -------------------------------------------------
-// GOVERNMENT ID NUMBER MATCH
+// GOVERNMENT ID NUMBER MATCH (THE ONLY REQUIRED CHECK)
 // -------------------------------------------------
 
 const idNumberMatched =
@@ -2798,22 +2698,12 @@ const idNumberMatched =
     combinedOCR
   );
 
-// -------------------------------------------------
-// GOVERNMENT ID = TYPE + NUMBER
-// -------------------------------------------------
-
-const governmentIdMatched =
-  idTypeMatched &&
-  idNumberMatched;
-
       // -------------------------------------------------
-      // RESULT
+      // RESULT — ID NUMBER ONLY
       // -------------------------------------------------
 
 const verified =
-  firstNameMatched &&
-  lastNameMatched &&
-  governmentIdMatched;
+  idNumberMatched;
 
       console.log(
         "================================="
@@ -2824,28 +2714,23 @@ const verified =
       );
 
 console.log(
-  "FIRST NAME MATCH:",
+  "FIRST NAME MATCH (info only):",
   firstNameMatched
 );
 
 console.log(
-  "LAST NAME MATCH:",
+  "LAST NAME MATCH (info only):",
   lastNameMatched
 );
 
 console.log(
-  "ID TYPE MATCH:",
+  "ID TYPE MATCH (info only):",
   idTypeMatched
 );
 
 console.log(
-  "ID NUMBER MATCH:",
+  "ID NUMBER MATCH (REQUIRED):",
   idNumberMatched
-);
-
-console.log(
-  "GOVERNMENT ID MATCH:",
-  governmentIdMatched
 );
 
 console.log(
@@ -2876,9 +2761,6 @@ console.log(
 
           idNumber:
             idNumberMatched,
-
-          governmentId:
-            governmentIdMatched,
         },
 
         governmentIdType:
@@ -2888,7 +2770,7 @@ console.log(
 
         message: verified
           ? "Government ID verification successful."
-          : "Government ID information does not match the uploaded ID.",
+          : "Government ID number does not match the uploaded ID.",
       });
 
     } catch (error) {
@@ -2920,14 +2802,12 @@ console.log(
 // STUDENTS ONLY
 // =====================================================
 //
-// 3-WAY VERIFICATION:
+// VERIFICATION (UPDATED):
 //
-// 1. First Name
-// 2. Last Name
-// 3. TUP ID Number
+// TUP ID Number ONLY.
 //
 // Uses TUP ID FRONT PHOTO for OCR.
-// TUP ID BACK PHOTO is also required.
+// TUP ID BACK PHOTO is also required (but not OCR'd).
 //
 
 app.post(
@@ -3110,7 +2990,7 @@ app.post(
       );
 
       // =================================================
-      // 1. FIRST NAME MATCH
+      // FIRST NAME MATCH (LOGGING ONLY — NOT REQUIRED)
       // =================================================
 
       const firstNameMatched =
@@ -3120,7 +3000,7 @@ app.post(
         );
 
       // =================================================
-      // 2. LAST NAME MATCH
+      // LAST NAME MATCH (LOGGING ONLY — NOT REQUIRED)
       // =================================================
 
       const lastNameMatched =
@@ -3130,7 +3010,7 @@ app.post(
         );
 
       // =================================================
-      // 3. TUP ID NUMBER MATCH
+      // TUP ID NUMBER MATCH (THE ONLY REQUIRED CHECK)
       // =================================================
 
       const tupIdMatched =
@@ -3140,12 +3020,12 @@ app.post(
         );
 
       // =================================================
-      // FINAL 3-WAY VERIFICATION
+      // FINAL VERIFICATION — ID NUMBER ONLY
       // =================================================
 
       const verified =
-        firstNameMatched &&
-        lastNameMatched &&
+        firstNameMatched ||
+        lastNameMatched ||
         tupIdMatched;
 
       // =================================================
@@ -3161,17 +3041,17 @@ app.post(
       );
 
       console.log(
-        "FIRST NAME MATCH:",
+        "FIRST NAME MATCH (info only):",
         firstNameMatched
       );
 
       console.log(
-        "LAST NAME MATCH:",
+        "LAST NAME MATCH (info only):",
         lastNameMatched
       );
 
       console.log(
-        "TUP ID NUMBER MATCH:",
+        "TUP ID NUMBER MATCH (REQUIRED):",
         tupIdMatched
       );
 
@@ -3190,37 +3070,16 @@ app.post(
 
       if (!verified) {
 
-        const failedChecks: string[] = [];
-
-        if (!firstNameMatched) {
-
-          failedChecks.push(
-            "First Name"
-          );
-        }
-
-        if (!lastNameMatched) {
-
-          failedChecks.push(
-            "Last Name"
-          );
-        }
-
-        if (!tupIdMatched) {
-
-          failedChecks.push(
-            "TUP ID Number"
-          );
-        }
-
         return res.status(400).json({
 
           verified: false,
 
           message:
-            "Student TUP ID verification failed.",
+            "Student TUP ID verification failed. The TUP ID number could not be found on the uploaded ID.",
 
-          failedChecks,
+          failedChecks: [
+            "TUP ID Number",
+          ],
 
           matches: {
 
@@ -3306,11 +3165,6 @@ app.post(
 // =====================================================
 // LOGIN
 // =====================================================
-  
-
-// =====================================================
-// LOGIN
-// =====================================================
 
 app.post(
   "/api/auth/login",
@@ -3349,11 +3203,6 @@ app.post(
             "Username and password are required.",
         });
       }
-
-      // -------------------------------------------------
-// TURNSTILE CAPTCHA CHECK
-// -------------------------------------------------
-
 
       const cleanUsername =
         String(username)
@@ -3409,11 +3258,6 @@ app.post(
         });
       }
 
-
-
-
-
-      
       // -------------------------------------------------
       // SELLER PENDING
       // -------------------------------------------------
@@ -3472,10 +3316,6 @@ app.post(
     }
   }
 );
-
-// =====================================================
-// VERIFY OTP
-// =====================================================
 
 // =====================================================
 // VERIFY OTP
@@ -3774,27 +3614,31 @@ app.post(
         "================================="
       );
 
-      return res.json({
+const token = createJWT(updatedUser || user);
 
-        success:
-          true,
+return res.json({
 
-        message:
-          "OTP verified successfully.",
+  success:
+    true,
 
-        userId:
-          String(user._id),
+  message:
+    "OTP verified successfully.",
 
-        emailVerified:
-          true,
+  userId:
+    String(user._id),
 
-        user:
+  emailVerified:
+    true,
+
+  token,
+
+  user:
+    updatedUser
+      ? buildSafeUser(
           updatedUser
-            ? buildSafeUser(
-                updatedUser
-              )
-            : null,
-      });
+        )
+      : null,
+});
 
     } catch (error) {
 
@@ -3810,10 +3654,6 @@ app.post(
     }
   }
 );
-
-// =====================================================
-// RESEND OTP
-// =====================================================
 
 // =====================================================
 // RESEND OTP

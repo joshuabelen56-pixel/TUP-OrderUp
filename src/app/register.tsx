@@ -43,11 +43,6 @@ const ACCOUNT_TYPES: AccountType[] = [
 ];
 
 
-
-const [biometricAvailable, setBiometricAvailable] =
-  useState(false);
-
-
 const TUP_AFFILIATIONS: TUPAffiliation[] = [
   "Student",
   "Faculty",
@@ -1073,12 +1068,12 @@ verificationFormData.append(
     console.log("=================================");
 
     // -----------------------------------------------
-    // MUST BE 3/3
+    // AT LEAST 1 OF 3 MUST MATCH (OR LOGIC)
     // -----------------------------------------------
 
     if (
-      !firstNameMatch ||
-      !lastNameMatch ||
+      !firstNameMatch &&
+      !lastNameMatch &&
       !idNumberMatch
     ) {
       let failedChecks: string[] = [];
@@ -1274,12 +1269,12 @@ if (isStudent) {
   console.log("=================================");
 
   // -----------------------------------------------
-  // MUST BE 3/3
+  // AT LEAST 1 OF 3 MUST MATCH (OR LOGIC)
   // -----------------------------------------------
 
   if (
-    !firstNameMatch ||
-    !lastNameMatch ||
+    !firstNameMatch &&
+    !lastNameMatch &&
     !idNumberMatch
   ) {
     const failedChecks: string[] = [];
@@ -1517,7 +1512,7 @@ console.log(
         );
 
         formData.append(
-          "tupIdFront",
+          "tupIdFrontPhoto",
           tupFrontFile as any
         );
 
@@ -1546,7 +1541,7 @@ console.log(
         );
 
         formData.append(
-          "tupIdBack",
+          "tupIdBackPhoto",
           tupBackFile as any
         );
       } else {
@@ -1685,6 +1680,7 @@ Alert.alert(
           pathname: "../otp",
           params: {
             email: otpEmail,
+            userId: data.userId,
           },
         });
       },
@@ -3357,69 +3353,31 @@ Alert.alert(
   mixedContentMode="always" 
   allowsInlineMediaPlayback={true}
 
-  onMessage={(event) => {
-    try {
-      const data = JSON.parse(
-        event.nativeEvent.data
-      );
+onMessage={(event) => {
+  try {
+    const data = JSON.parse(event.nativeEvent.data);
 
-if (data.type === "CAPTCHA_SUCCESS") {
-  console.log(
-    "✅ CAPTCHA TOKEN:",
-    data.token
-  );
-
-  setCaptchaToken(data.token);
-
-  fetch("http://192.168.18.24:5001/api/verify", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      token: data.token,
-    }),
-  })
-    .then(async (response) => {
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(
-          result.message || "CAPTCHA verification failed."
-        );
-      }
-
+    if (data.success && data.captchaVerificationToken) {
       console.log(
-        "✅ CAPTCHA VERIFICATION TOKEN RECEIVED"
+        "✅ CAPTCHA VERIFICATION TOKEN RECEIVED:",
+        data.captchaVerificationToken
       );
 
-      setCaptchaVerificationToken(
-        result.verificationToken
-      );
-    })
-    .catch((error) => {
-      console.error(
-        "❌ CAPTCHA SERVER ERROR:",
-        error
+      setCaptchaToken(data.captchaVerificationToken);
+      setCaptchaVerificationToken(data.captchaVerificationToken);
+    } else {
+      console.log(
+        "❌ CAPTCHA ERROR:",
+        data.message || "Verification failed."
       );
 
+      setCaptchaToken(null);
       setCaptchaVerificationToken(null);
-    });
-}
-
-      if (data.type === "CAPTCHA_ERROR") {
-        console.log(
-          "❌ CAPTCHA ERROR:",
-          data.error
-        );
-      }
-    } catch (error) {
-      console.error(
-        "CAPTCHA message error:",
-        error
-      );
     }
-  }}
+  } catch (error) {
+    console.error("CAPTCHA message error:", error);
+  }
+}}
 
   onError={(event) => { 
     console.log(
