@@ -18,15 +18,24 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useTheme } from "../../context/ThemeContext";
 
-// =====================================================
-// CONFIG
-// =====================================================
+/* =========================================================
+   CONFIG
+========================================================= */
 
 const API_URL = "http://192.168.18.24:5000";
-const PRIMARY = "#C41E3A";
-const DARK_RED = "#8F1029";
 
+const PRIMARY = "#7D1021";
+const DARK_RED = "#5F0C19";
+const CARDINAL_SOFT = "#F9ECEF";
+const GOLD = "#D8B56A";
+
+const USER_STORAGE_KEY = "@tuporderup_user";
+
+/* =========================================================
+   HELPERS
+========================================================= */
 
 const capitalizeName = (name?: string) => {
   if (!name) return "";
@@ -36,13 +45,15 @@ const capitalizeName = (name?: string) => {
     .split(/\s+/)
     .map(
       (word) =>
-        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+        word.charAt(0).toUpperCase() +
+        word.slice(1).toLowerCase()
     )
     .join(" ");
 };
 
-
-const USER_STORAGE_KEY = "@tuporderup_user";
+/* =========================================================
+   TYPES
+========================================================= */
 
 type ModalType =
   | "profile"
@@ -73,47 +84,94 @@ type User = {
   updatedAt?: string;
 };
 
-// =====================================================
-// MAIN SETTINGS
-// =====================================================
+/* =========================================================
+   MAIN SETTINGS
+========================================================= */
 
 export default function Settings() {
-  const [user, setUser] = useState<User | null>(null);
+  /* =======================================================
+     GLOBAL THEME
+  ======================================================= */
+
+  const {
+    darkMode,
+    toggleDarkMode,
+  } = useTheme();
+
+  /* =======================================================
+     USER
+  ======================================================= */
+
+  const [user, setUser] = useState<User | null>(
+    null
+  );
+
+  /* =======================================================
+     STATES
+  ======================================================= */
 
   const [loading, setLoading] = useState(true);
-  const [savingProfile, setSavingProfile] = useState(false);
+
+  const [savingProfile, setSavingProfile] =
+    useState(false);
+
   const [changingPassword, setChangingPassword] =
     useState(false);
 
   const [notifications, setNotifications] =
     useState(true);
 
-  const [darkMode, setDarkMode] = useState(false);
-
   const [modal, setModal] =
     useState<ModalType>(null);
 
-  // Profile
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
-  const [username, setUsername] = useState("");
+  /* =======================================================
+     PROFILE
+  ======================================================= */
 
-  // Password
+  const [firstName, setFirstName] =
+    useState("");
+
+  const [lastName, setLastName] =
+    useState("");
+
+  const [email, setEmail] =
+    useState("");
+
+  const [username, setUsername] =
+    useState("");
+
+  /* =======================================================
+     PASSWORD
+  ======================================================= */
+
   const [currentPassword, setCurrentPassword] =
     useState("");
+
   const [newPassword, setNewPassword] =
     useState("");
+
   const [confirmPassword, setConfirmPassword] =
     useState("");
 
-  // Support
+  const [showCurrentPassword, setShowCurrentPassword] =
+    useState(false);
+
+  const [showNewPassword, setShowNewPassword] =
+    useState(false);
+
+  const [showConfirmPassword, setShowConfirmPassword] =
+    useState(false);
+
+  /* =======================================================
+     SUPPORT
+  ======================================================= */
+
   const [feedback, setFeedback] =
     useState("");
 
-  // =====================================================
-  // LOAD USER
-  // =====================================================
+  /* =========================================================
+     LOAD USER
+  ========================================================= */
 
   useEffect(() => {
     loadUser();
@@ -138,9 +196,7 @@ export default function Settings() {
             {
               text: "OK",
               onPress: () =>
-                router.replace(
-                  "../login"
-                ),
+                router.replace("../login"),
             },
           ]
         );
@@ -157,7 +213,10 @@ export default function Settings() {
         );
       }
 
-      // Initial data from storage
+      /* =====================================================
+         LOCAL USER
+      ===================================================== */
+
       setUser(parsedUser);
 
       setFirstName(
@@ -175,12 +234,13 @@ export default function Settings() {
       setEmail(
         parsedUser.email ||
           parsedUser.gsfeEmail ||
+          parsedUser.gmailEmail ||
           ""
       );
 
-      // =================================================
-      // GET LATEST USER FROM MONGODB
-      // =================================================
+      /* =====================================================
+         REFRESH FROM SERVER
+      ===================================================== */
 
       try {
         const response = await fetch(
@@ -189,7 +249,10 @@ export default function Settings() {
 
         const data = await response.json();
 
-        if (response.ok && data.user) {
+        if (
+          response.ok &&
+          data.user
+        ) {
           setUser(data.user);
 
           setFirstName(
@@ -206,12 +269,11 @@ export default function Settings() {
 
           setEmail(
             data.user.email ||
-            data.user.gsfeEmail ||
-            data.user.gmailEmail ||
-            ""
+              data.user.gsfeEmail ||
+              data.user.gmailEmail ||
+              ""
           );
 
-          // Update local session
           await AsyncStorage.setItem(
             USER_STORAGE_KEY,
             JSON.stringify(data.user)
@@ -238,44 +300,110 @@ export default function Settings() {
     }
   };
 
-  // =====================================================
-  // THEME
-  // =====================================================
+  /* =========================================================
+     THEME COLORS
+  ========================================================= */
 
   const theme = {
     background: darkMode
-      ? "#111111"
-      : "#F6F7F9",
+      ? "#101010"
+      : "#F5F6F8",
 
     card: darkMode
-      ? "#1E1E1E"
+      ? "#1A1A1A"
       : "#FFFFFF",
 
     text: darkMode
       ? "#FFFFFF"
-      : "#242424",
+      : "#202124",
 
     secondary: darkMode
-      ? "#AAAAAA"
-      : "#888888",
+      ? "#A6A6A6"
+      : "#777777",
 
     border: darkMode
-      ? "#303030"
-      : "#EEEEEE",
+      ? "#2B2B2B"
+      : "#E8E8E8",
+
+    softCard: darkMode
+      ? "#202020"
+      : "#FAFAFA",
   };
 
-  // =====================================================
-  // INITIALS
-  // =====================================================
+  /* =========================================================
+     INITIALS
+  ========================================================= */
 
   const initials =
     `${firstName?.charAt(0) || ""}${
       lastName?.charAt(0) || ""
     }`.toUpperCase();
 
-  // =====================================================
-  // SAVE PROFILE
-  // =====================================================
+  /* =========================================================
+     PASSWORD STRENGTH
+  ========================================================= */
+
+  const passwordChecks = {
+    length:
+      newPassword.length >= 8,
+
+    uppercase:
+      /[A-Z]/.test(newPassword),
+
+    lowercase:
+      /[a-z]/.test(newPassword),
+
+    number:
+      /[0-9]/.test(newPassword),
+
+    special:
+      /[^A-Za-z0-9]/.test(newPassword),
+  };
+
+  const passwordScore =
+    Object.values(
+      passwordChecks
+    ).filter(Boolean).length;
+
+  const passwordStrength =
+    newPassword.length === 0
+      ? {
+          label:
+            "Enter a new password",
+          color: "#999999",
+          progress: 0,
+        }
+      : passwordScore <= 2
+        ? {
+            label:
+              "Weak password",
+            color: "#D64545",
+            progress: 0.3,
+          }
+        : passwordScore === 3
+          ? {
+              label:
+                "Fair password",
+              color: "#E39A18",
+              progress: 0.5,
+            }
+          : passwordScore === 4
+            ? {
+                label:
+                  "Good password",
+                color: "#4B8D5C",
+                progress: 0.75,
+              }
+            : {
+                label:
+                  "Strong password",
+                color: "#278A45",
+                progress: 1,
+              };
+
+  /* =========================================================
+     SAVE PROFILE
+  ========================================================= */
 
   const saveProfile = async () => {
     if (!user?.id) {
@@ -318,15 +446,23 @@ export default function Settings() {
               "application/json",
           },
 
-        body: JSON.stringify({
-          firstName: capitalizeName(firstName),
-          lastName: capitalizeName(lastName),
-          username: username.trim().toLowerCase(),
-        }),
+          body: JSON.stringify({
+            firstName:
+              capitalizeName(firstName),
+
+            lastName:
+              capitalizeName(lastName),
+
+            username:
+              username
+                .trim()
+                .toLowerCase(),
+          }),
         }
       );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
         throw new Error(
@@ -351,15 +487,17 @@ export default function Settings() {
         );
 
         setEmail(
-        data.user.email ||
-        data.user.gsfeEmail ||
-        data.user.gmailEmail ||
-        ""
+          data.user.email ||
+            data.user.gsfeEmail ||
+            data.user.gmailEmail ||
+            ""
         );
 
         await AsyncStorage.setItem(
           USER_STORAGE_KEY,
-          JSON.stringify(data.user)
+          JSON.stringify(
+            data.user
+          )
         );
       }
 
@@ -385,9 +523,9 @@ export default function Settings() {
     }
   };
 
-  // =====================================================
-  // CHANGE PASSWORD
-  // =====================================================
+  /* =========================================================
+     CHANGE PASSWORD
+  ========================================================= */
 
   const changePassword = async () => {
     if (!user?.id) {
@@ -410,16 +548,28 @@ export default function Settings() {
       return;
     }
 
-    if (newPassword.length < 8) {
+    if (
+      currentPassword ===
+      newPassword
+    ) {
+      Alert.alert(
+        "Invalid Password",
+        "Your new password must be different from your current password."
+      );
+      return;
+    }
+
+    if (passwordScore < 5) {
       Alert.alert(
         "Weak Password",
-        "Your new password must contain at least 8 characters."
+        "Please create a strong password that meets all the requirements."
       );
       return;
     }
 
     if (
-      newPassword !== confirmPassword
+      newPassword !==
+      confirmPassword
     ) {
       Alert.alert(
         "Password Mismatch",
@@ -448,7 +598,8 @@ export default function Settings() {
         }
       );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
         throw new Error(
@@ -460,6 +611,18 @@ export default function Settings() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
+
+      setShowCurrentPassword(
+        false
+      );
+
+      setShowNewPassword(
+        false
+      );
+
+      setShowConfirmPassword(
+        false
+      );
 
       setModal(null);
 
@@ -483,9 +646,9 @@ export default function Settings() {
     }
   };
 
-  // =====================================================
-  // LOGOUT
-  // =====================================================
+  /* =========================================================
+     LOGOUT
+  ========================================================= */
 
   const handleLogout = () => {
     Alert.alert(
@@ -503,6 +666,14 @@ export default function Settings() {
 
           onPress: async () => {
             try {
+              /*
+               IMPORTANT:
+               Only remove USER SESSION.
+
+               DO NOT clear AsyncStorage,
+               so Dark Mode remains saved.
+              */
+
               await AsyncStorage.removeItem(
                 USER_STORAGE_KEY
               );
@@ -516,8 +687,6 @@ export default function Settings() {
                 error
               );
 
-              // Still navigate even if
-              // local storage has an issue.
               router.replace(
                 "../login"
               );
@@ -528,9 +697,9 @@ export default function Settings() {
     );
   };
 
-  // =====================================================
-  // SEND FEEDBACK
-  // =====================================================
+  /* =========================================================
+     SEND FEEDBACK
+  ========================================================= */
 
   const sendFeedback = () => {
     if (!feedback.trim()) {
@@ -538,6 +707,7 @@ export default function Settings() {
         "Message Required",
         "Please enter your concern or feedback."
       );
+
       return;
     }
 
@@ -550,9 +720,9 @@ export default function Settings() {
     );
   };
 
-  // =====================================================
-  // LOADING
-  // =====================================================
+  /* =========================================================
+     LOADING
+  ========================================================= */
 
   if (loading) {
     return (
@@ -567,14 +737,22 @@ export default function Settings() {
       >
         <StatusBar
           barStyle="light-content"
-          backgroundColor={DARK_RED}
+          backgroundColor={
+            DARK_RED
+          }
         />
 
-        <View style={styles.loadingContainer}>
-          <View style={styles.loadingLogo}>
+        <View
+          style={
+            styles.loadingContainer
+          }
+        >
+          <View
+            style={styles.loadingMark}
+          >
             <Ionicons
-              name="settings-outline"
-              size={32}
+              name="person-outline"
+              size={29}
               color="#FFFFFF"
             />
           </View>
@@ -587,17 +765,19 @@ export default function Settings() {
             }}
           />
 
-          <Text style={styles.loadingText}>
-            Loading your settings...
+          <Text
+            style={styles.loadingText}
+          >
+            Loading settings...
           </Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  // =====================================================
-  // MAIN UI
-  // =====================================================
+  /* =========================================================
+     MAIN UI
+  ========================================================= */
 
   return (
     <SafeAreaView
@@ -615,7 +795,9 @@ export default function Settings() {
       />
 
       <ScrollView
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={
+          false
+        }
         contentContainerStyle={
           styles.container
         }
@@ -624,35 +806,56 @@ export default function Settings() {
             HEADER
         ================================================= */}
 
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.smallTitle}>
+        <View
+          style={styles.header}
+        >
+          <View>
+            <Text
+              style={
+                styles.headerEyebrow
+              }
+            >
               TUP-ORDERUP
             </Text>
 
-            <Text style={styles.headerTitle}>
+            <Text
+              style={
+                styles.headerTitle
+              }
+            >
               Settings
             </Text>
 
             <Text
-              style={styles.headerSubtitle}
+              style={
+                styles.headerSubtitle
+              }
             >
-              Manage your account and
-              preferences
+              Account, preferences & support
             </Text>
           </View>
 
-          <View style={styles.headerIcon}>
-            <Ionicons
-              name="settings-outline"
-              size={24}
-              color="#FFFFFF"
+          <View
+            style={
+              styles.headerAccent
+            }
+          >
+            <View
+              style={
+                styles.headerAccentLine
+              }
+            />
+
+            <View
+              style={
+                styles.headerAccentDot
+              }
             />
           </View>
         </View>
 
         {/* =================================================
-            PROFILE CARD
+            PROFILE
         ================================================= */}
 
         <View
@@ -661,31 +864,50 @@ export default function Settings() {
             {
               backgroundColor:
                 theme.card,
+
+              borderColor:
+                theme.border,
             },
           ]}
         >
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
+          <View
+            style={styles.avatar}
+          >
+            <Text
+              style={
+                styles.avatarText
+              }
+            >
               {initials || "U"}
             </Text>
           </View>
 
-          <View style={styles.profileInfo}>
-          <Text
-            style={[
-              styles.profileName,
-              {
-                color: theme.text,
-              },
-            ]}
-            numberOfLines={1}
+          <View
+            style={
+              styles.profileInfo
+            }
           >
-            {capitalizeName(firstName)} {capitalizeName(lastName)}
-          </Text>
+            <Text
+              style={[
+                styles.profileName,
+                {
+                  color:
+                    theme.text,
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {capitalizeName(
+                firstName
+              )}{" "}
+              {capitalizeName(
+                lastName
+              )}
+            </Text>
 
             <Text
               style={[
-                styles.profileEmail,
+                styles.profileUsername,
                 {
                   color:
                     theme.secondary,
@@ -693,31 +915,30 @@ export default function Settings() {
               ]}
               numberOfLines={1}
             >
-              {email || "No email"}
+              @{username || "user"}
             </Text>
 
             <View
-              style={styles.verifiedRow}
+              style={
+                styles.accountStatusRow
+              }
             >
-              <Ionicons
-                name={
-                  user?.accountStatus ===
-                  "Approved"
-                    ? "checkmark-circle"
-                    : "time-outline"
-                }
-                size={13}
-                color={
-                  user?.accountStatus ===
-                  "Approved"
-                    ? "#35A853"
-                    : "#E39A18"
-                }
+              <View
+                style={[
+                  styles.statusDot,
+                  {
+                    backgroundColor:
+                      user?.accountStatus ===
+                      "Approved"
+                        ? "#35A853"
+                        : "#E39A18",
+                  },
+                ]}
               />
 
               <Text
                 style={[
-                  styles.verifiedText,
+                  styles.accountStatusText,
                   {
                     color:
                       user?.accountStatus ===
@@ -737,7 +958,9 @@ export default function Settings() {
           </View>
 
           <TouchableOpacity
-            style={styles.editButton}
+            style={
+              styles.editButton
+            }
             activeOpacity={0.8}
             onPress={() =>
               setModal("profile")
@@ -755,9 +978,7 @@ export default function Settings() {
             ACCOUNT
         ================================================= */}
 
-        <Text style={styles.sectionTitle}>
-          ACCOUNT
-        </Text>
+        <SectionHeader title="ACCOUNT" />
 
         <View
           style={[
@@ -765,13 +986,16 @@ export default function Settings() {
             {
               backgroundColor:
                 theme.card,
+
+              borderColor:
+                theme.border,
             },
           ]}
         >
           <SettingItem
             icon="person-outline"
             title="Personal Information"
-            subtitle="Manage your account details"
+            subtitle="Manage your personal details"
             textColor={theme.text}
             secondaryColor={
               theme.secondary
@@ -788,7 +1012,7 @@ export default function Settings() {
           <SettingItem
             icon="shield-checkmark-outline"
             title="Account Verification"
-            subtitle="View your verification status"
+            subtitle="Check your verification status"
             badge={
               user?.accountStatus ===
               "Approved"
@@ -801,7 +1025,9 @@ export default function Settings() {
               theme.secondary
             }
             onPress={() =>
-              setModal("verification")
+              setModal(
+                "verification"
+              )
             }
           />
 
@@ -812,7 +1038,7 @@ export default function Settings() {
           <SettingItem
             icon="lock-closed-outline"
             title="Security"
-            subtitle="Password and account security"
+            subtitle="Password and account protection"
             textColor={theme.text}
             secondaryColor={
               theme.secondary
@@ -827,9 +1053,9 @@ export default function Settings() {
             PREFERENCES
         ================================================= */}
 
-        <Text style={styles.sectionTitle}>
-          PREFERENCES
-        </Text>
+        <SectionHeader
+          title="PREFERENCES"
+        />
 
         <View
           style={[
@@ -837,130 +1063,58 @@ export default function Settings() {
             {
               backgroundColor:
                 theme.card,
+
+              borderColor:
+                theme.border,
             },
           ]}
         >
-          <View style={styles.settingRow}>
-            <View style={styles.settingIcon}>
-              <Ionicons
-                name="notifications-outline"
-                size={21}
-                color={PRIMARY}
-              />
-            </View>
-
-            <View
-              style={styles.settingText}
-            >
-              <Text
-                style={[
-                  styles.settingTitle,
-                  {
-                    color: theme.text,
-                  },
-                ]}
-              >
-                Notifications
-              </Text>
-
-              <Text
-                style={[
-                  styles.settingSubtitle,
-                  {
-                    color:
-                      theme.secondary,
-                  },
-                ]}
-              >
-                Receive order updates and
-                alerts
-              </Text>
-            </View>
-
-            <Switch
-              value={notifications}
-              onValueChange={(value) => {
-                setNotifications(value);
-              }}
-              trackColor={{
-                false: "#D7D7D7",
-                true: "#E3A5B1",
-              }}
-              thumbColor={
-                notifications
-                  ? PRIMARY
-                  : "#F4F4F4"
-              }
-            />
-          </View>
+          <PreferenceRow
+            icon="notifications-outline"
+            title="Notifications"
+            subtitle="Order updates and important alerts"
+            value={
+              notifications
+            }
+            onValueChange={
+              setNotifications
+            }
+            darkMode={
+              darkMode
+            }
+          />
 
           <Divider
             color={theme.border}
           />
 
-          <View style={styles.settingRow}>
-            <View style={styles.settingIcon}>
-              <Ionicons
-                name={
-                  darkMode
-                    ? "moon"
-                    : "moon-outline"
-                }
-                size={21}
-                color={PRIMARY}
-              />
-            </View>
-
-            <View
-              style={styles.settingText}
-            >
-              <Text
-                style={[
-                  styles.settingTitle,
-                  {
-                    color: theme.text,
-                  },
-                ]}
-              >
-                Dark Mode
-              </Text>
-
-              <Text
-                style={[
-                  styles.settingSubtitle,
-                  {
-                    color:
-                      theme.secondary,
-                  },
-                ]}
-              >
-                Change the app appearance
-              </Text>
-            </View>
-
-            <Switch
-              value={darkMode}
-              onValueChange={setDarkMode}
-              trackColor={{
-                false: "#D7D7D7",
-                true: "#E3A5B1",
-              }}
-              thumbColor={
-                darkMode
-                  ? PRIMARY
-                  : "#F4F4F4"
-              }
-            />
-          </View>
+          <PreferenceRow
+            icon={
+              darkMode
+                ? "moon"
+                : "moon-outline"
+            }
+            title="Dark Mode"
+            subtitle="Use a darker app appearance"
+            value={
+              darkMode
+            }
+            onValueChange={
+              toggleDarkMode
+            }
+            darkMode={
+              darkMode
+            }
+          />
         </View>
 
         {/* =================================================
             SUPPORT
         ================================================= */}
 
-        <Text style={styles.sectionTitle}>
-          SUPPORT
-        </Text>
+        <SectionHeader
+          title="SUPPORT & INFORMATION"
+        />
 
         <View
           style={[
@@ -968,13 +1122,16 @@ export default function Settings() {
             {
               backgroundColor:
                 theme.card,
+
+              borderColor:
+                theme.border,
             },
           ]}
         >
           <SettingItem
             icon="help-circle-outline"
             title="Help Center"
-            subtitle="Find answers to common questions"
+            subtitle="Answers to common questions"
             textColor={theme.text}
             secondaryColor={
               theme.secondary
@@ -1025,17 +1182,25 @@ export default function Settings() {
         ================================================= */}
 
         <TouchableOpacity
-          style={styles.logoutButton}
+          style={
+            styles.logoutButton
+          }
           activeOpacity={0.8}
-          onPress={handleLogout}
+          onPress={
+            handleLogout
+          }
         >
           <Ionicons
             name="log-out-outline"
-            size={21}
+            size={20}
             color={PRIMARY}
           />
 
-          <Text style={styles.logoutText}>
+          <Text
+            style={
+              styles.logoutText
+            }
+          >
             Log Out
           </Text>
         </TouchableOpacity>
@@ -1044,21 +1209,36 @@ export default function Settings() {
             FOOTER
         ================================================= */}
 
-        <View style={styles.footer}>
-          <Text style={styles.footerBrand}>
-            TUP-OrderUp
+        <View
+          style={styles.footer}
+        >
+          <View
+            style={styles.footerLine}
+          />
+
+          <Text
+            style={
+              styles.footerBrand
+            }
+          >
+            TUP-ORDERUP
           </Text>
 
           <Text
-            style={styles.footerVersion}
+            style={
+              styles.footerUniversity
+            }
           >
-            Version 1.0.0
+            TECHNOLOGICAL UNIVERSITY OF THE
+            PHILIPPINES
           </Text>
 
           <Text
-            style={styles.footerCopyright}
+            style={
+              styles.footerVersion
+            }
           >
-            © 2026 TUP-OrderUp
+            Version 1.0.0 • 2026
           </Text>
         </View>
       </ScrollView>
@@ -1068,15 +1248,25 @@ export default function Settings() {
       ===================================================== */}
 
       <AppModal
-        visible={modal === "profile"}
-        onClose={() => setModal(null)}
+        visible={
+          modal === "profile"
+        }
+        onClose={() =>
+          setModal(null)
+        }
         title="My Profile"
         subtitle="Update your account information"
-        darkMode={darkMode}
+        darkMode={
+          darkMode
+        }
       >
-        <View style={styles.bigAvatar}>
+        <View
+          style={styles.bigAvatar}
+        >
           <Text
-            style={styles.bigAvatarText}
+            style={
+              styles.bigAvatarText
+            }
           >
             {initials || "U"}
           </Text>
@@ -1085,31 +1275,47 @@ export default function Settings() {
         <Input
           label="FIRST NAME"
           value={firstName}
-          onChangeText={setFirstName}
-          darkMode={darkMode}
+          onChangeText={
+            setFirstName
+          }
+          darkMode={
+            darkMode
+          }
         />
 
         <Input
           label="LAST NAME"
           value={lastName}
-          onChangeText={setLastName}
-          darkMode={darkMode}
+          onChangeText={
+            setLastName
+          }
+          darkMode={
+            darkMode
+          }
         />
 
         <Input
           label="EMAIL"
           value={email}
-          onChangeText={setEmail}
+          onChangeText={
+            setEmail
+          }
           keyboardType="email-address"
           editable={false}
-          darkMode={darkMode}
+          darkMode={
+            darkMode
+          }
         />
 
         <Input
           label="USERNAME"
           value={username}
-          onChangeText={setUsername}
-          darkMode={darkMode}
+          onChangeText={
+            setUsername
+          }
+          darkMode={
+            darkMode
+          }
         />
 
         <PrimaryButton
@@ -1118,8 +1324,12 @@ export default function Settings() {
               ? "Saving..."
               : "Save Changes"
           }
-          onPress={saveProfile}
-          loading={savingProfile}
+          onPress={
+            saveProfile
+          }
+          loading={
+            savingProfile
+          }
         />
       </AppModal>
 
@@ -1128,18 +1338,30 @@ export default function Settings() {
       ===================================================== */}
 
       <AppModal
-        visible={modal === "personal"}
-        onClose={() => setModal(null)}
+        visible={
+          modal === "personal"
+        }
+        onClose={() =>
+          setModal(null)
+        }
         title="Personal Information"
         subtitle="Your registered account details"
-        darkMode={darkMode}
+        darkMode={
+          darkMode
+        }
       >
-<InfoRow
-  icon="person-outline"
-  label="FULL NAME"
-  value={`${capitalizeName(user?.firstName)} ${capitalizeName(user?.lastName)}`}
-  darkMode={darkMode}
-/>
+        <InfoRow
+          icon="person-outline"
+          label="FULL NAME"
+          value={`${capitalizeName(
+            user?.firstName
+          )} ${capitalizeName(
+            user?.lastName
+          )}`}
+          darkMode={
+            darkMode
+          }
+        />
 
         <InfoRow
           icon="mail-outline"
@@ -1150,33 +1372,44 @@ export default function Settings() {
             user?.gmailEmail ||
             "Not provided"
           }
-          darkMode={darkMode}
+          darkMode={
+            darkMode
+          }
         />
 
         <InfoRow
           icon="at-outline"
           label="USERNAME"
           value={`@${
-            user?.username || ""
+            user?.username ||
+            ""
           }`}
-          darkMode={darkMode}
+          darkMode={
+            darkMode
+          }
         />
 
         <InfoRow
           icon="school-outline"
           label="ACCOUNT TYPE"
           value={
-            user?.role || "User"
+            user?.role ||
+            "User"
           }
-          darkMode={darkMode}
+          darkMode={
+            darkMode
+          }
         />
 
-        {user?.age !== undefined && (
+        {user?.age !==
+          undefined && (
           <InfoRow
             icon="calendar-outline"
             label="AGE"
             value={`${user.age} years old`}
-            darkMode={darkMode}
+            darkMode={
+              darkMode
+            }
           />
         )}
 
@@ -1193,7 +1426,9 @@ export default function Settings() {
               ? "#278A45"
               : "#C47C00"
           }
-          darkMode={darkMode}
+          darkMode={
+            darkMode
+          }
         />
 
         <PrimaryButton
@@ -1209,11 +1444,17 @@ export default function Settings() {
       ===================================================== */}
 
       <AppModal
-        visible={modal === "verification"}
-        onClose={() => setModal(null)}
+        visible={
+          modal === "verification"
+        }
+        onClose={() =>
+          setModal(null)
+        }
         title="Account Verification"
-        subtitle="Your account verification status"
-        darkMode={darkMode}
+        subtitle="Your verification status"
+        darkMode={
+          darkMode
+        }
       >
         <View
           style={[
@@ -1222,8 +1463,12 @@ export default function Settings() {
               backgroundColor:
                 user?.accountStatus ===
                 "Approved"
-                  ? "#F0FAF3"
-                  : "#FFF8E8",
+                  ? darkMode
+                    ? "#14251A"
+                    : "#F0FAF3"
+                  : darkMode
+                    ? "#2A2112"
+                    : "#FFF8E8",
             },
           ]}
         >
@@ -1246,7 +1491,7 @@ export default function Settings() {
                   ? "checkmark"
                   : "time-outline"
               }
-              size={34}
+              size={32}
               color="#FFFFFF"
             />
           </View>
@@ -1275,17 +1520,16 @@ export default function Settings() {
               styles.verificationDescription,
               {
                 color:
-                  user?.accountStatus ===
-                  "Approved"
-                    ? "#6F806F"
-                    : "#8A7750",
+                  darkMode
+                    ? "#AAAAAA"
+                    : "#777777",
               },
             ]}
           >
             {user?.accountStatus ===
             "Approved"
               ? "Your account has been approved and is ready to use."
-              : "Your account verification status is currently being processed."}
+              : "Your account verification is currently being processed."}
           </Text>
         </View>
 
@@ -1302,19 +1546,25 @@ export default function Settings() {
               ? "#278A45"
               : "#C47C00"
           }
-          darkMode={darkMode}
+          darkMode={
+            darkMode
+          }
         />
 
         <InfoRow
           icon="person-outline"
           label="ACCOUNT TYPE"
           value={
-            user?.role || "User"
+            user?.role ||
+            "User"
           }
-          darkMode={darkMode}
+          darkMode={
+            darkMode
+          }
         />
 
-        {user?.role === "Student" && (
+        {user?.role ===
+          "Student" && (
           <InfoRow
             icon="school-outline"
             label="TUP ID NUMBER"
@@ -1322,11 +1572,14 @@ export default function Settings() {
               user?.tupIdNumber ||
               "Not provided"
             }
-            darkMode={darkMode}
+            darkMode={
+              darkMode
+            }
           />
         )}
 
-        {user?.role !== "Student" && (
+        {user?.role !==
+          "Student" && (
           <>
             <InfoRow
               icon="card-outline"
@@ -1335,7 +1588,9 @@ export default function Settings() {
                 user?.governmentIdType ||
                 "Not provided"
               }
-              darkMode={darkMode}
+              darkMode={
+                darkMode
+              }
             />
 
             <InfoRow
@@ -1345,7 +1600,9 @@ export default function Settings() {
                 user?.governmentIdNumber ||
                 "Not provided"
               }
-              darkMode={darkMode}
+              darkMode={
+                darkMode
+              }
             />
           </>
         )}
@@ -1356,12 +1613,38 @@ export default function Settings() {
       ===================================================== */}
 
       <AppModal
-        visible={modal === "security"}
-        onClose={() => setModal(null)}
+        visible={
+          modal === "security"
+        }
+        onClose={() => {
+          setModal(null);
+
+          setCurrentPassword("");
+          setNewPassword("");
+          setConfirmPassword("");
+
+          setShowCurrentPassword(
+            false
+          );
+
+          setShowNewPassword(
+            false
+          );
+
+          setShowConfirmPassword(
+            false
+          );
+        }}
         title="Security"
         subtitle="Keep your account protected"
-        darkMode={darkMode}
+        darkMode={
+          darkMode
+        }
       >
+        {/* =================================================
+            SECURITY NOTICE
+        ================================================= */}
+
         <View
           style={[
             styles.securityNotice,
@@ -1369,56 +1652,480 @@ export default function Settings() {
               backgroundColor:
                 darkMode
                   ? "#2A171A"
-                  : "#FFF5F6",
+                  : CARDINAL_SOFT,
             },
           ]}
         >
-          <Ionicons
-            name="shield-checkmark-outline"
-            size={25}
-            color={PRIMARY}
-          />
+          <View
+            style={
+              styles.securityIcon
+            }
+          >
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={21}
+              color={PRIMARY}
+            />
+          </View>
 
-          <Text
+          <View
+            style={{
+              flex: 1,
+            }}
+          >
+            <Text
+              style={[
+                styles.securityNoticeTitle,
+                {
+                  color:
+                    darkMode
+                      ? "#FFFFFF"
+                      : DARK_RED,
+                },
+              ]}
+            >
+              Strong password required
+            </Text>
+
+            <Text
+              style={[
+                styles.securityNoticeText,
+                {
+                  color:
+                    darkMode
+                      ? "#BBBBBB"
+                      : "#707070",
+                },
+              ]}
+            >
+              Create a strong password to keep
+              your TUP-OrderUp account secure.
+            </Text>
+          </View>
+        </View>
+
+        {/* =================================================
+            CURRENT PASSWORD
+        ================================================= */}
+
+        <Text
+          style={[
+            styles.modalLabel,
+            {
+              color:
+                darkMode
+                  ? "#AAAAAA"
+                  : "#777777",
+            },
+          ]}
+        >
+          CURRENT PASSWORD
+        </Text>
+
+        <View
+          style={[
+            styles.passwordInputWrapper,
+            {
+              backgroundColor:
+                darkMode
+                  ? "#292929"
+                  : "#FAFAFA",
+
+              borderColor:
+                darkMode
+                  ? "#3A3A3A"
+                  : "#E2E2E2",
+            },
+          ]}
+        >
+          <TextInput
+            value={
+              currentPassword
+            }
+            onChangeText={
+              setCurrentPassword
+            }
+            secureTextEntry={
+              !showCurrentPassword
+            }
             style={[
-              styles.securityNoticeText,
+              styles.passwordInput,
               {
                 color:
                   darkMode
-                    ? "#BBBBBB"
-                    : "#777777",
+                    ? "#FFFFFF"
+                    : "#242424",
               },
             ]}
+            autoCapitalize="none"
+            placeholder="Enter your current password"
+            placeholderTextColor="#999999"
+          />
+
+          <TouchableOpacity
+            style={
+              styles.passwordEye
+            }
+            activeOpacity={0.7}
+            onPress={() =>
+              setShowCurrentPassword(
+                !showCurrentPassword
+              )
+            }
           >
-            Use a strong password with at
-            least 8 characters to keep your
-            account secure.
-          </Text>
+            <Ionicons
+              name={
+                showCurrentPassword
+                  ? "eye-outline"
+                  : "eye-off-outline"
+              }
+              size={20}
+              color="#999999"
+            />
+          </TouchableOpacity>
         </View>
 
-        <Input
-          label="CURRENT PASSWORD"
-          value={currentPassword}
-          onChangeText={setCurrentPassword}
-          secureTextEntry
-          darkMode={darkMode}
-        />
+        {/* =================================================
+            NEW PASSWORD
+        ================================================= */}
 
-        <Input
-          label="NEW PASSWORD"
-          value={newPassword}
-          onChangeText={setNewPassword}
-          secureTextEntry
-          darkMode={darkMode}
-        />
+        <Text
+          style={[
+            styles.modalLabel,
+            {
+              color:
+                darkMode
+                  ? "#AAAAAA"
+                  : "#777777",
+            },
+          ]}
+        >
+          NEW PASSWORD
+        </Text>
 
-        <Input
-          label="CONFIRM NEW PASSWORD"
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          secureTextEntry
-          darkMode={darkMode}
-        />
+        <View
+          style={[
+            styles.passwordInputWrapper,
+            {
+              backgroundColor:
+                darkMode
+                  ? "#292929"
+                  : "#FAFAFA",
+
+              borderColor:
+                newPassword.length >
+                0
+                  ? passwordStrength.color
+                  : darkMode
+                    ? "#3A3A3A"
+                    : "#E2E2E2",
+            },
+          ]}
+        >
+          <TextInput
+            value={
+              newPassword
+            }
+            onChangeText={
+              setNewPassword
+            }
+            secureTextEntry={
+              !showNewPassword
+            }
+            style={[
+              styles.passwordInput,
+              {
+                color:
+                  darkMode
+                    ? "#FFFFFF"
+                    : "#242424",
+              },
+            ]}
+            autoCapitalize="none"
+            placeholder="Create a strong password"
+            placeholderTextColor="#999999"
+          />
+
+          <TouchableOpacity
+            style={
+              styles.passwordEye
+            }
+            activeOpacity={0.7}
+            onPress={() =>
+              setShowNewPassword(
+                !showNewPassword
+              )
+            }
+          >
+            <Ionicons
+              name={
+                showNewPassword
+                  ? "eye-outline"
+                  : "eye-off-outline"
+              }
+              size={20}
+              color="#999999"
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* =================================================
+            PASSWORD STRENGTH
+        ================================================= */}
+
+        {newPassword.length >
+          0 && (
+          <View
+            style={
+              styles.passwordStrengthContainer
+            }
+          >
+            <View
+              style={
+                styles.passwordStrengthHeader
+              }
+            >
+              <Text
+                style={[
+                  styles.passwordStrengthLabel,
+                  {
+                    color:
+                      passwordStrength.color,
+                  },
+                ]}
+              >
+                {
+                  passwordStrength.label
+                }
+              </Text>
+
+              <Text
+                style={[
+                  styles.passwordStrengthPercent,
+                  {
+                    color:
+                      passwordStrength.color,
+                  },
+                ]}
+              >
+                {Math.round(
+                  passwordStrength.progress *
+                    100
+                )}
+                %
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.passwordProgressBackground,
+                {
+                  backgroundColor:
+                    darkMode
+                      ? "#343434"
+                      : "#E8E8E8",
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.passwordProgressFill,
+                  {
+                    width: `${passwordStrength.progress * 100}%`,
+                    backgroundColor:
+                      passwordStrength.color,
+                  },
+                ]}
+              />
+            </View>
+
+            <View
+              style={
+                styles.passwordRequirements
+              }
+            >
+              <PasswordRequirement
+                label="At least 8 characters"
+                valid={
+                  passwordChecks.length
+                }
+                darkMode={
+                  darkMode
+                }
+              />
+
+              <PasswordRequirement
+                label="One uppercase letter"
+                valid={
+                  passwordChecks.uppercase
+                }
+                darkMode={
+                  darkMode
+                }
+              />
+
+              <PasswordRequirement
+                label="One lowercase letter"
+                valid={
+                  passwordChecks.lowercase
+                }
+                darkMode={
+                  darkMode
+                }
+              />
+
+              <PasswordRequirement
+                label="One number"
+                valid={
+                  passwordChecks.number
+                }
+                darkMode={
+                  darkMode
+                }
+              />
+
+              <PasswordRequirement
+                label="One special character"
+                valid={
+                  passwordChecks.special
+                }
+                darkMode={
+                  darkMode
+                }
+              />
+            </View>
+          </View>
+        )}
+
+        {/* =================================================
+            CONFIRM PASSWORD
+        ================================================= */}
+
+        <Text
+          style={[
+            styles.modalLabel,
+            {
+              color:
+                darkMode
+                  ? "#AAAAAA"
+                  : "#777777",
+            },
+          ]}
+        >
+          CONFIRM NEW PASSWORD
+        </Text>
+
+        <View
+          style={[
+            styles.passwordInputWrapper,
+            {
+              backgroundColor:
+                darkMode
+                  ? "#292929"
+                  : "#FAFAFA",
+
+              borderColor:
+                confirmPassword.length >
+                0
+                  ? confirmPassword ===
+                    newPassword
+                    ? "#35A853"
+                    : "#D64545"
+                  : darkMode
+                    ? "#3A3A3A"
+                    : "#E2E2E2",
+            },
+          ]}
+        >
+          <TextInput
+            value={
+              confirmPassword
+            }
+            onChangeText={
+              setConfirmPassword
+            }
+            secureTextEntry={
+              !showConfirmPassword
+            }
+            style={[
+              styles.passwordInput,
+              {
+                color:
+                  darkMode
+                    ? "#FFFFFF"
+                    : "#242424",
+              },
+            ]}
+            autoCapitalize="none"
+            placeholder="Confirm your new password"
+            placeholderTextColor="#999999"
+          />
+
+          <TouchableOpacity
+            style={
+              styles.passwordEye
+            }
+            activeOpacity={0.7}
+            onPress={() =>
+              setShowConfirmPassword(
+                !showConfirmPassword
+              )
+            }
+          >
+            <Ionicons
+              name={
+                showConfirmPassword
+                  ? "eye-outline"
+                  : "eye-off-outline"
+              }
+              size={20}
+              color="#999999"
+            />
+          </TouchableOpacity>
+        </View>
+
+        {confirmPassword.length >
+          0 && (
+          <View
+            style={
+              styles.confirmPasswordStatus
+            }
+          >
+            <Ionicons
+              name={
+                confirmPassword ===
+                newPassword
+                  ? "checkmark-circle"
+                  : "close-circle"
+              }
+              size={15}
+              color={
+                confirmPassword ===
+                newPassword
+                  ? "#278A45"
+                  : "#D64545"
+              }
+            />
+
+            <Text
+              style={[
+                styles.confirmPasswordText,
+                {
+                  color:
+                    confirmPassword ===
+                    newPassword
+                      ? "#278A45"
+                      : "#D64545",
+                },
+              ]}
+            >
+              {confirmPassword ===
+              newPassword
+                ? "Passwords match"
+                : "Passwords do not match"}
+            </Text>
+          </View>
+        )}
 
         <PrimaryButton
           title={
@@ -1426,8 +2133,12 @@ export default function Settings() {
               ? "Updating..."
               : "Update Password"
           }
-          onPress={changePassword}
-          loading={changingPassword}
+          onPress={
+            changePassword
+          }
+          loading={
+            changingPassword
+          }
         />
       </AppModal>
 
@@ -1436,40 +2147,56 @@ export default function Settings() {
       ===================================================== */}
 
       <AppModal
-        visible={modal === "help"}
-        onClose={() => setModal(null)}
+        visible={
+          modal === "help"
+        }
+        onClose={() =>
+          setModal(null)
+        }
         title="Help Center"
         subtitle="Frequently asked questions"
-        darkMode={darkMode}
+        darkMode={
+          darkMode
+        }
       >
         <FAQ
           question="How do I place an order?"
           answer="Go to Home, select Order Food, choose your meal, add it to your cart, and proceed to checkout."
-          darkMode={darkMode}
+          darkMode={
+            darkMode
+          }
         />
 
         <FAQ
           question="How can I track my order?"
           answer="Open My Orders to view your current orders and order history."
-          darkMode={darkMode}
+          darkMode={
+            darkMode
+          }
         />
 
         <FAQ
           question="Why can't I log in?"
           answer="Only approved accounts can log in. Make sure you are using the correct username and password."
-          darkMode={darkMode}
+          darkMode={
+            darkMode
+          }
         />
 
         <FAQ
           question="How do I change my password?"
-          answer="Open Settings, select Security, enter your current password, then enter and confirm your new password."
-          darkMode={darkMode}
+          answer="Open Settings, select Security, enter your current password, then create and confirm a strong new password."
+          darkMode={
+            darkMode
+          }
         />
 
         <FAQ
           question="What if I have a problem with my order?"
           answer="Open Contact Support and send us a detailed message about your concern."
-          darkMode={darkMode}
+          darkMode={
+            darkMode
+          }
         />
       </AppModal>
 
@@ -1478,11 +2205,17 @@ export default function Settings() {
       ===================================================== */}
 
       <AppModal
-        visible={modal === "support"}
-        onClose={() => setModal(null)}
+        visible={
+          modal === "support"
+        }
+        onClose={() =>
+          setModal(null)
+        }
         title="Contact Support"
         subtitle="We're here to help"
-        darkMode={darkMode}
+        darkMode={
+          darkMode
+        }
       >
         <Text
           style={[
@@ -1500,7 +2233,9 @@ export default function Settings() {
 
         <TextInput
           value={feedback}
-          onChangeText={setFeedback}
+          onChangeText={
+            setFeedback
+          }
           style={[
             styles.input,
             styles.textArea,
@@ -1515,9 +2250,10 @@ export default function Settings() {
                   ? "#3A3A3A"
                   : "#E2E2E2",
 
-              color: darkMode
-                ? "#FFFFFF"
-                : "#242424",
+              color:
+                darkMode
+                  ? "#FFFFFF"
+                  : "#242424",
             },
           ]}
           multiline
@@ -1528,7 +2264,9 @@ export default function Settings() {
 
         <PrimaryButton
           title="Send Message"
-          onPress={sendFeedback}
+          onPress={
+            sendFeedback
+          }
         />
       </AppModal>
 
@@ -1537,18 +2275,28 @@ export default function Settings() {
       ===================================================== */}
 
       <AppModal
-        visible={modal === "about"}
-        onClose={() => setModal(null)}
+        visible={
+          modal === "about"
+        }
+        onClose={() =>
+          setModal(null)
+        }
         title="About TUP-OrderUp"
         subtitle="Campus ordering made easier"
-        darkMode={darkMode}
+        darkMode={
+          darkMode
+        }
       >
-        <View style={styles.aboutLogo}>
-          <Ionicons
-            name="restaurant"
-            size={38}
-            color="#FFFFFF"
-          />
+        <View
+          style={styles.aboutMark}
+        >
+          <Text
+            style={
+              styles.aboutMarkText
+            }
+          >
+            T
+          </Text>
         </View>
 
         <Text
@@ -1563,6 +2311,21 @@ export default function Settings() {
           ]}
         >
           TUP-OrderUp
+        </Text>
+
+        <Text
+          style={[
+            styles.aboutUniversity,
+            {
+              color:
+                darkMode
+                  ? "#B5B5B5"
+                  : "#777777",
+            },
+          ]}
+        >
+          TECHNOLOGICAL UNIVERSITY OF THE
+          PHILIPPINES
         </Text>
 
         <Text
@@ -1586,30 +2349,68 @@ export default function Settings() {
           icon="code-slash-outline"
           label="VERSION"
           value="1.0.0"
-          darkMode={darkMode}
+          darkMode={
+            darkMode
+          }
         />
 
         <InfoRow
           icon="calendar-outline"
           label="RELEASE YEAR"
           value="2026"
-          darkMode={darkMode}
+          darkMode={
+            darkMode
+          }
         />
 
         <InfoRow
           icon="school-outline"
           label="PLATFORM"
           value="TUP Campus"
-          darkMode={darkMode}
+          darkMode={
+            darkMode
+          }
         />
       </AppModal>
     </SafeAreaView>
   );
 }
 
-// =====================================================
-// SETTING ITEM
-// =====================================================
+/* =========================================================
+   SECTION HEADER
+========================================================= */
+
+function SectionHeader({
+  title,
+}: {
+  title: string;
+}) {
+  return (
+    <View
+      style={
+        styles.sectionHeader
+      }
+    >
+      <Text
+        style={
+          styles.sectionTitle
+        }
+      >
+        {title}
+      </Text>
+
+      <View
+        style={
+          styles.sectionLine
+        }
+      />
+    </View>
+  );
+}
+
+/* =========================================================
+   SETTING ITEM
+========================================================= */
 
 function SettingItem({
   icon,
@@ -1632,11 +2433,17 @@ function SettingItem({
 }) {
   return (
     <TouchableOpacity
-      style={styles.settingRow}
-      activeOpacity={0.7}
+      style={
+        styles.settingRow
+      }
+      activeOpacity={0.72}
       onPress={onPress}
     >
-      <View style={styles.settingIcon}>
+      <View
+        style={
+          styles.settingIcon
+        }
+      >
         <Ionicons
           name={icon}
           size={21}
@@ -1644,12 +2451,17 @@ function SettingItem({
         />
       </View>
 
-      <View style={styles.settingText}>
+      <View
+        style={
+          styles.settingText
+        }
+      >
         <Text
           style={[
             styles.settingTitle,
             {
-              color: textColor,
+              color:
+                textColor,
             },
           ]}
         >
@@ -1660,7 +2472,8 @@ function SettingItem({
           style={[
             styles.settingSubtitle,
             {
-              color: secondaryColor,
+              color:
+                secondaryColor,
             },
           ]}
         >
@@ -1669,33 +2482,138 @@ function SettingItem({
       </View>
 
       {badge && (
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>
+        <View
+          style={
+            styles.badge
+          }
+        >
+          <Text
+            style={
+              styles.badgeText
+            }
+          >
             {badge}
           </Text>
         </View>
       )}
 
       {rightText && (
-        <Text style={styles.rightText}>
+        <Text
+          style={
+            styles.rightText
+          }
+        >
           {rightText}
         </Text>
       )}
 
-      {!badge && !rightText && (
-        <Ionicons
-          name="chevron-forward"
-          size={19}
-          color="#B0B0B0"
-        />
-      )}
+      {!badge &&
+        !rightText && (
+          <Ionicons
+            name="chevron-forward"
+            size={18}
+            color="#B3B3B3"
+          />
+        )}
     </TouchableOpacity>
   );
 }
 
-// =====================================================
-// DIVIDER
-// =====================================================
+/* =========================================================
+   PREFERENCE ROW
+========================================================= */
+
+function PreferenceRow({
+  icon,
+  title,
+  subtitle,
+  value,
+  onValueChange,
+  darkMode,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  subtitle: string;
+  value: boolean;
+  onValueChange: (
+    value: boolean
+  ) => void;
+  darkMode: boolean;
+}) {
+  return (
+    <View
+      style={
+        styles.settingRow
+      }
+    >
+      <View
+        style={
+          styles.settingIcon
+        }
+      >
+        <Ionicons
+          name={icon}
+          size={21}
+          color={PRIMARY}
+        />
+      </View>
+
+      <View
+        style={
+          styles.settingText
+        }
+      >
+        <Text
+          style={[
+            styles.settingTitle,
+            {
+              color:
+                darkMode
+                  ? "#FFFFFF"
+                  : "#202124",
+            },
+          ]}
+        >
+          {title}
+        </Text>
+
+        <Text
+          style={[
+            styles.settingSubtitle,
+            {
+              color:
+                darkMode
+                  ? "#9D9D9D"
+                  : "#777777",
+            },
+          ]}
+        >
+          {subtitle}
+        </Text>
+      </View>
+
+      <Switch
+        value={value}
+        onValueChange={
+          onValueChange
+        }
+        trackColor={{
+          false: "#D5D5D5",
+          true: "#D9A6AF",
+        }}
+        thumbColor={
+          value
+            ? PRIMARY
+            : "#F5F5F5"
+        }
+      />
+    </View>
+  );
+}
+
+/* =========================================================
+   DIVIDER
+========================================================= */
 
 function Divider({
   color,
@@ -1707,16 +2625,17 @@ function Divider({
       style={[
         styles.divider,
         {
-          backgroundColor: color,
+          backgroundColor:
+            color,
         },
       ]}
     />
   );
 }
 
-// =====================================================
-// INPUT
-// =====================================================
+/* =========================================================
+   INPUT
+========================================================= */
 
 function Input({
   label,
@@ -1729,7 +2648,9 @@ function Input({
 }: {
   label: string;
   value: string;
-  onChangeText: (text: string) => void;
+  onChangeText: (
+    text: string
+  ) => void;
   secureTextEntry?: boolean;
   keyboardType?: any;
   editable?: boolean;
@@ -1753,7 +2674,9 @@ function Input({
 
       <TextInput
         value={value}
-        onChangeText={onChangeText}
+        onChangeText={
+          onChangeText
+        }
         style={[
           styles.input,
           {
@@ -1767,19 +2690,22 @@ function Input({
                 ? "#3A3A3A"
                 : "#E2E2E2",
 
-            color: darkMode
-              ? "#FFFFFF"
-              : "#242424",
+            color:
+              darkMode
+                ? "#FFFFFF"
+                : "#242424",
 
             opacity: editable
               ? 1
-              : 0.65,
+              : 0.6,
           },
         ]}
         secureTextEntry={
           secureTextEntry
         }
-        keyboardType={keyboardType}
+        keyboardType={
+          keyboardType
+        }
         autoCapitalize="none"
         editable={editable}
         placeholderTextColor="#999999"
@@ -1788,9 +2714,9 @@ function Input({
   );
 }
 
-// =====================================================
-// MODAL
-// =====================================================
+/* =========================================================
+   MODAL
+========================================================= */
 
 function AppModal({
   visible,
@@ -1812,7 +2738,9 @@ function AppModal({
       visible={visible}
       transparent
       animationType="slide"
-      onRequestClose={onClose}
+      onRequestClose={
+        onClose
+      }
     >
       <KeyboardAvoidingView
         behavior={
@@ -1820,16 +2748,14 @@ function AppModal({
             ? "padding"
             : undefined
         }
-        style={styles.modalOverlay}
+        style={
+          styles.modalOverlay
+        }
       >
         <View
-          style={[
-            styles.modalBackground,
-            {
-              backgroundColor:
-                "rgba(0,0,0,0.48)",
-            },
-          ]}
+          style={
+            styles.modalBackground
+          }
         >
           <View
             style={[
@@ -1855,10 +2781,14 @@ function AppModal({
             />
 
             <View
-              style={styles.modalHeader}
+              style={
+                styles.modalHeader
+              }
             >
               <View
-                style={{ flex: 1 }}
+                style={{
+                  flex: 1,
+                }}
               >
                 <Text
                   style={[
@@ -1899,11 +2829,16 @@ function AppModal({
                         : "#F3F3F3",
                   },
                 ]}
-                onPress={onClose}
+                activeOpacity={
+                  0.75
+                }
+                onPress={
+                  onClose
+                }
               >
                 <Ionicons
                   name="close"
-                  size={22}
+                  size={21}
                   color={
                     darkMode
                       ? "#FFFFFF"
@@ -1931,9 +2866,9 @@ function AppModal({
   );
 }
 
-// =====================================================
-// INFO ROW
-// =====================================================
+/* =========================================================
+   INFO ROW
+========================================================= */
 
 function InfoRow({
   icon,
@@ -1960,7 +2895,11 @@ function InfoRow({
         },
       ]}
     >
-      <View style={styles.infoIcon}>
+      <View
+        style={
+          styles.infoIcon
+        }
+      >
         <Ionicons
           name={icon}
           size={20}
@@ -1968,7 +2907,11 @@ function InfoRow({
         />
       </View>
 
-      <View style={{ flex: 1 }}>
+      <View
+        style={{
+          flex: 1,
+        }}
+      >
         <Text
           style={[
             styles.infoLabel,
@@ -2002,9 +2945,62 @@ function InfoRow({
   );
 }
 
-// =====================================================
-// FAQ
-// =====================================================
+/* =========================================================
+   PASSWORD REQUIREMENT
+========================================================= */
+
+function PasswordRequirement({
+  label,
+  valid,
+  darkMode,
+}: {
+  label: string;
+  valid: boolean;
+  darkMode: boolean;
+}) {
+  return (
+    <View
+      style={
+        styles.passwordRequirementRow
+      }
+    >
+      <Ionicons
+        name={
+          valid
+            ? "checkmark-circle"
+            : "ellipse-outline"
+        }
+        size={15}
+        color={
+          valid
+            ? "#278A45"
+            : darkMode
+              ? "#666666"
+              : "#B5B5B5"
+        }
+      />
+
+      <Text
+        style={[
+          styles.passwordRequirementText,
+          {
+            color: valid
+              ? "#278A45"
+              : darkMode
+                ? "#999999"
+                : "#888888",
+          },
+        ]}
+      >
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+/* =========================================================
+   FAQ
+========================================================= */
 
 function FAQ({
   question,
@@ -2027,13 +3023,22 @@ function FAQ({
             darkMode
               ? "#292929"
               : "#F8F8F8",
+
+          borderColor:
+            darkMode
+              ? "#363636"
+              : "#EEEEEE",
         },
       ]}
       activeOpacity={0.8}
-      onPress={() => setOpen(!open)}
+      onPress={() =>
+        setOpen(!open)
+      }
     >
       <View
-        style={styles.faqHeader}
+        style={
+          styles.faqHeader
+        }
       >
         <Text
           style={[
@@ -2079,9 +3084,9 @@ function FAQ({
   );
 }
 
-// =====================================================
-// PRIMARY BUTTON
-// =====================================================
+/* =========================================================
+   PRIMARY BUTTON
+========================================================= */
 
 function PrimaryButton({
   title,
@@ -2097,14 +3102,19 @@ function PrimaryButton({
       style={[
         styles.primaryButton,
         {
-          opacity: loading
-            ? 0.7
-            : 1,
+          opacity:
+            loading
+              ? 0.7
+              : 1,
         },
       ]}
-      activeOpacity={0.85}
+      activeOpacity={
+        0.85
+      }
       onPress={onPress}
-      disabled={loading}
+      disabled={
+        loading
+      }
     >
       {loading ? (
         <ActivityIndicator
@@ -2132,126 +3142,194 @@ function PrimaryButton({
   );
 }
 
-// =====================================================
-// STYLES
-// =====================================================
+/* =========================================================
+   STYLES
+========================================================= */
 
 const styles = StyleSheet.create({
+  /* =======================================================
+     SAFE AREA
+  ======================================================= */
+
   safeArea: {
     flex: 1,
   },
 
   container: {
-    paddingBottom: 40,
+    paddingBottom: 35,
   },
 
-  // ===================================================
-  // LOADING
-  // ===================================================
+  /* =======================================================
+     LOADING
+  ======================================================= */
 
   loadingContainer: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent:
+      "center",
+    alignItems:
+      "center",
   },
 
-  loadingLogo: {
-    width: 70,
-    height: 70,
-    borderRadius: 23,
-    backgroundColor: DARK_RED,
-    justifyContent: "center",
-    alignItems: "center",
+  loadingMark: {
+    width: 65,
+    height: 65,
+    borderRadius: 20,
+    backgroundColor:
+      DARK_RED,
+    justifyContent:
+      "center",
+    alignItems:
+      "center",
   },
 
   loadingText: {
     marginTop: 10,
     color: "#888888",
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight:
+      "600",
   },
 
-  // ===================================================
-  // HEADER
-  // ===================================================
+  /* =======================================================
+     HEADER
+  ======================================================= */
 
   header: {
-    backgroundColor: DARK_RED,
+    backgroundColor:
+      DARK_RED,
     paddingHorizontal: 22,
-    paddingTop: 20,
-    paddingBottom: 30,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderBottomLeftRadius: 27,
-    borderBottomRightRadius: 27,
+    paddingTop: 22,
+    paddingBottom: 32,
+
+    flexDirection:
+      "row",
+
+    alignItems:
+      "flex-end",
+
+    justifyContent:
+      "space-between",
+
+    borderBottomLeftRadius:
+      28,
+
+    borderBottomRightRadius:
+      28,
   },
 
-  smallTitle: {
-    color: "#F6DDE2",
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 1.5,
+  headerEyebrow: {
+    color:
+      "#E7C4CA",
+    fontSize: 9,
+    fontWeight:
+      "800",
+    letterSpacing: 2,
   },
 
   headerTitle: {
-    color: "#FFFFFF",
-    fontSize: 27,
-    fontWeight: "800",
-    marginTop: 2,
+    color:
+      "#FFFFFF",
+    fontSize: 30,
+    fontWeight:
+      "900",
+    marginTop: 4,
   },
 
   headerSubtitle: {
-    color: "#F4C8D0",
+    color:
+      "#E9BDC5",
     fontSize: 11,
     marginTop: 3,
   },
 
-  headerIcon: {
-    width: 45,
-    height: 45,
-    borderRadius: 14,
-    backgroundColor:
-      "rgba(255,255,255,0.15)",
-    justifyContent: "center",
-    alignItems: "center",
+  headerAccent: {
+    width: 38,
+    height: 38,
+    justifyContent:
+      "center",
+    alignItems:
+      "center",
+    marginBottom: 3,
   },
 
-  // ===================================================
-  // PROFILE
-  // ===================================================
+  headerAccentLine: {
+    width: 26,
+    height: 2,
+    backgroundColor:
+      GOLD,
+    marginBottom: 6,
+  },
+
+  headerAccentDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor:
+      GOLD,
+  },
+
+  /* =======================================================
+     PROFILE
+  ======================================================= */
 
   profileCard: {
     marginHorizontal: 18,
-    marginTop: -14,
-    borderRadius: 19,
-    padding: 17,
-    flexDirection: "row",
-    alignItems: "center",
+    marginTop: -16,
+    borderRadius: 20,
+    padding: 16,
 
-    shadowColor: "#000",
+    flexDirection:
+      "row",
+
+    alignItems:
+      "center",
+
+    borderWidth: 1,
+
+    shadowColor:
+      "#000000",
+
     shadowOffset: {
       width: 0,
-      height: 3,
+      height: 4,
     },
-    shadowOpacity: 0.07,
-    shadowRadius: 8,
+
+    shadowOpacity:
+      0.07,
+
+    shadowRadius:
+      9,
+
     elevation: 3,
   },
 
   avatar: {
-    width: 57,
-    height: 57,
+    width: 58,
+    height: 58,
     borderRadius: 18,
-    backgroundColor: "#FCECEF",
-    justifyContent: "center",
-    alignItems: "center",
+
+    backgroundColor:
+      CARDINAL_SOFT,
+
+    justifyContent:
+      "center",
+
+    alignItems:
+      "center",
+
+    borderWidth: 1,
+
+    borderColor:
+      "#F0D7DC",
   },
 
   avatarText: {
-    fontSize: 17,
-    fontWeight: "900",
-    color: PRIMARY,
+    color:
+      PRIMARY,
+    fontSize: 18,
+    fontWeight:
+      "900",
   },
 
   profileInfo: {
@@ -2261,84 +3339,147 @@ const styles = StyleSheet.create({
 
   profileName: {
     fontSize: 15,
-    fontWeight: "800",
-    
+    fontWeight:
+      "900",
   },
 
-  profileEmail: {
-    fontSize: 11,
-    marginTop: 3,
+  profileUsername: {
+    fontSize: 10.5,
+    marginTop: 2,
   },
 
-  verifiedRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 6,
+  accountStatusRow: {
+    flexDirection:
+      "row",
+
+    alignItems:
+      "center",
+
+    marginTop: 7,
   },
 
-  verifiedText: {
-    fontSize: 10,
-    fontWeight: "700",
-    marginLeft: 4,
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+
+  accountStatusText: {
+    fontSize: 9.5,
+    fontWeight:
+      "800",
+    marginLeft: 5,
   },
 
   editButton: {
-    width: 38,
-    height: 38,
+    width: 39,
+    height: 39,
     borderRadius: 12,
-    backgroundColor: "#FCECEF",
-    justifyContent: "center",
-    alignItems: "center",
+
+    backgroundColor:
+      CARDINAL_SOFT,
+
+    justifyContent:
+      "center",
+
+    alignItems:
+      "center",
   },
 
-  // ===================================================
-  // SECTIONS
-  // ===================================================
+  /* =======================================================
+     SECTION
+  ======================================================= */
 
-  sectionTitle: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: "#858585",
-    letterSpacing: 1.2,
+  sectionHeader: {
     marginTop: 27,
     marginBottom: 9,
     marginHorizontal: 21,
+
+    flexDirection:
+      "row",
+
+    alignItems:
+      "center",
   },
+
+  sectionTitle: {
+    fontSize: 10.5,
+    fontWeight:
+      "900",
+    color:
+      "#858585",
+    letterSpacing:
+      1.3,
+  },
+
+  sectionLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor:
+      "#E3E3E3",
+    marginLeft: 10,
+  },
+
+  /* =======================================================
+     CARD
+  ======================================================= */
 
   card: {
     marginHorizontal: 18,
     borderRadius: 18,
-    overflow: "hidden",
+    overflow:
+      "hidden",
 
-    shadowColor: "#000",
+    borderWidth: 1,
+
+    shadowColor:
+      "#000000",
+
     shadowOffset: {
       width: 0,
       height: 2,
     },
-    shadowOpacity: 0.04,
-    shadowRadius: 7,
+
+    shadowOpacity:
+      0.035,
+
+    shadowRadius:
+      6,
+
     elevation: 2,
   },
 
-  // ===================================================
-  // SETTINGS
-  // ===================================================
+  /* =======================================================
+     SETTING ROW
+  ======================================================= */
 
   settingRow: {
     minHeight: 68,
+
     paddingHorizontal: 14,
     paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
+
+    flexDirection:
+      "row",
+
+    alignItems:
+      "center",
   },
 
   settingIcon: {
     width: 43,
     height: 43,
     borderRadius: 13,
-    backgroundColor: "#FCECEF",
-    justifyContent: "center",
-    alignItems: "center",
+
+    backgroundColor:
+      CARDINAL_SOFT,
+
+    justifyContent:
+      "center",
+
+    alignItems:
+      "center",
+
     marginRight: 12,
   },
 
@@ -2348,7 +3489,8 @@ const styles = StyleSheet.create({
 
   settingTitle: {
     fontSize: 13.5,
-    fontWeight: "700",
+    fontWeight:
+      "800",
   },
 
   settingSubtitle: {
@@ -2363,79 +3505,125 @@ const styles = StyleSheet.create({
   },
 
   badge: {
-    backgroundColor: "#EAF7EE",
+    backgroundColor:
+      "#EAF7EE",
+
     borderRadius: 8,
+
     paddingHorizontal: 9,
     paddingVertical: 5,
+
     marginRight: 4,
   },
 
   badgeText: {
-    color: "#278A45",
+    color:
+      "#278A45",
     fontSize: 9.5,
-    fontWeight: "800",
+    fontWeight:
+      "800",
   },
 
   rightText: {
-    color: "#999999",
+    color:
+      "#999999",
     fontSize: 10.5,
     marginRight: 3,
   },
 
-  // ===================================================
-  // LOGOUT
-  // ===================================================
+  /* =======================================================
+     LOGOUT
+  ======================================================= */
 
   logoutButton: {
     height: 54,
+
     marginHorizontal: 18,
     marginTop: 25,
+
     borderRadius: 16,
-    backgroundColor: "#FFF1F3",
+
+    backgroundColor:
+      "#FFF4F5",
+
     borderWidth: 1,
-    borderColor: "#F4D1D7",
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
+
+    borderColor:
+      "#EECFD4",
+
+    flexDirection:
+      "row",
+
+    justifyContent:
+      "center",
+
+    alignItems:
+      "center",
   },
 
   logoutText: {
-    color: PRIMARY,
+    color:
+      PRIMARY,
     fontSize: 14,
-    fontWeight: "800",
+    fontWeight:
+      "900",
     marginLeft: 8,
   },
 
-  // ===================================================
-  // FOOTER
-  // ===================================================
+  /* =======================================================
+     FOOTER
+  ======================================================= */
 
   footer: {
-    alignItems: "center",
-    marginTop: 27,
+    alignItems:
+      "center",
+    marginTop: 28,
+  },
+
+  footerLine: {
+    width: 35,
+    height: 2,
+    backgroundColor:
+      GOLD,
+    borderRadius: 2,
+    marginBottom: 10,
   },
 
   footerBrand: {
-    color: DARK_RED,
+    color:
+      DARK_RED,
     fontSize: 13,
-    fontWeight: "800",
+    fontWeight:
+      "900",
+    letterSpacing:
+      1.1,
+  },
+
+  footerUniversity: {
+    color:
+      "#8C8C8C",
+    fontSize: 7.5,
+    fontWeight:
+      "700",
+    letterSpacing:
+      0.4,
+
+    marginTop: 4,
+
+    textAlign:
+      "center",
   },
 
   footerVersion: {
-    color: "#999999",
-    fontSize: 10,
-    marginTop: 3,
+    color:
+      "#B0B0B0",
+    fontSize: 9,
+    marginTop: 5,
   },
 
-  footerCopyright: {
-    color: "#B0B0B0",
-    fontSize: 9.5,
-    marginTop: 4,
-  },
-
-  // ===================================================
-  // MODAL
-  // ===================================================
+  /* =======================================================
+     MODAL
+  ======================================================= */
 
   modalOverlay: {
     flex: 1,
@@ -2443,34 +3631,58 @@ const styles = StyleSheet.create({
 
   modalBackground: {
     flex: 1,
-    justifyContent: "flex-end",
+
+    justifyContent:
+      "flex-end",
+
+    backgroundColor:
+      "rgba(0,0,0,0.45)",
   },
 
   modalSheet: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    maxHeight: "90%",
-    paddingHorizontal: 20,
-    paddingTop: 10,
+    borderTopLeftRadius:
+      29,
+
+    borderTopRightRadius:
+      29,
+
+    maxHeight:
+      "91%",
+
+    paddingHorizontal:
+      20,
+
+    paddingTop:
+      10,
   },
 
   modalHandle: {
-    alignSelf: "center",
+    alignSelf:
+      "center",
+
     width: 42,
     height: 5,
+
     borderRadius: 3,
+
     marginBottom: 17,
   },
 
   modalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 22,
+    flexDirection:
+      "row",
+
+    alignItems:
+      "center",
+
+    marginBottom:
+      20,
   },
 
   modalTitle: {
     fontSize: 23,
-    fontWeight: "900",
+    fontWeight:
+      "900",
   },
 
   modalSubtitle: {
@@ -2481,50 +3693,85 @@ const styles = StyleSheet.create({
   closeButton: {
     width: 38,
     height: 38,
+
     borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
+
+    justifyContent:
+      "center",
+
+    alignItems:
+      "center",
   },
 
-  // ===================================================
-  // AVATAR
-  // ===================================================
+  /* =======================================================
+     AVATAR
+  ======================================================= */
 
   bigAvatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 25,
-    backgroundColor: "#FCECEF",
-    alignSelf: "center",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 24,
+    width: 82,
+    height: 82,
+
+    borderRadius: 26,
+
+    backgroundColor:
+      CARDINAL_SOFT,
+
+    alignSelf:
+      "center",
+
+    justifyContent:
+      "center",
+
+    alignItems:
+      "center",
+
+    marginBottom: 23,
   },
 
   bigAvatarText: {
-    color: PRIMARY,
-    fontSize: 25,
-    fontWeight: "900",
+    color:
+      PRIMARY,
+
+    fontSize: 26,
+
+    fontWeight:
+      "900",
   },
 
-  // ===================================================
-  // INPUT
-  // ===================================================
+  /* =======================================================
+     INPUT
+  ======================================================= */
 
   modalLabel: {
     fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1,
-    marginBottom: 7,
-    marginTop: 13,
+
+    fontWeight:
+      "900",
+
+    letterSpacing:
+      1,
+
+    marginBottom:
+      7,
+
+    marginTop:
+      13,
   },
 
   input: {
     height: 49,
-    borderRadius: 13,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    fontSize: 13,
+
+    borderRadius:
+      13,
+
+    borderWidth:
+      1,
+
+    paddingHorizontal:
+      14,
+
+    fontSize:
+      13,
   },
 
   textArea: {
@@ -2532,165 +3779,491 @@ const styles = StyleSheet.create({
     paddingTop: 14,
   },
 
-  // ===================================================
-  // BUTTON
-  // ===================================================
+  /* =======================================================
+     PASSWORD
+  ======================================================= */
+
+  passwordInputWrapper: {
+    height: 49,
+
+    borderRadius:
+      13,
+
+    borderWidth:
+      1,
+
+    flexDirection:
+      "row",
+
+    alignItems:
+      "center",
+  },
+
+  passwordInput: {
+    flex: 1,
+
+    height:
+      "100%",
+
+    paddingHorizontal:
+      14,
+
+    fontSize:
+      13,
+  },
+
+  passwordEye: {
+    width: 45,
+    height: 49,
+
+    justifyContent:
+      "center",
+
+    alignItems:
+      "center",
+  },
+
+  passwordStrengthContainer: {
+    marginTop: 10,
+    marginBottom: 4,
+  },
+
+  passwordStrengthHeader: {
+    flexDirection:
+      "row",
+
+    justifyContent:
+      "space-between",
+
+    alignItems:
+      "center",
+
+    marginBottom: 6,
+  },
+
+  passwordStrengthLabel: {
+    fontSize: 10.5,
+    fontWeight:
+      "800",
+  },
+
+  passwordStrengthPercent: {
+    fontSize: 10,
+    fontWeight:
+      "800",
+  },
+
+  passwordProgressBackground: {
+    height: 6,
+
+    borderRadius:
+      3,
+
+    overflow:
+      "hidden",
+  },
+
+  passwordProgressFill: {
+    height:
+      "100%",
+
+    borderRadius:
+      3,
+  },
+
+  passwordRequirements: {
+    marginTop: 10,
+    gap: 5,
+  },
+
+  passwordRequirementRow: {
+    flexDirection:
+      "row",
+
+    alignItems:
+      "center",
+  },
+
+  passwordRequirementText: {
+    fontSize: 10.5,
+    marginLeft: 6,
+  },
+
+  confirmPasswordStatus: {
+    flexDirection:
+      "row",
+
+    alignItems:
+      "center",
+
+    marginTop: 7,
+  },
+
+  confirmPasswordText: {
+    fontSize: 10.5,
+
+    fontWeight:
+      "700",
+
+    marginLeft: 5,
+  },
+
+  /* =======================================================
+     BUTTON
+  ======================================================= */
 
   primaryButton: {
     height: 52,
-    borderRadius: 15,
-    backgroundColor: PRIMARY,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 24,
+
+    borderRadius:
+      15,
+
+    backgroundColor:
+      PRIMARY,
+
+    flexDirection:
+      "row",
+
+    alignItems:
+      "center",
+
+    justifyContent:
+      "center",
+
+    marginTop:
+      24,
   },
 
   primaryButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "800",
-    marginRight: 8,
+    color:
+      "#FFFFFF",
+
+    fontSize:
+      14,
+
+    fontWeight:
+      "900",
+
+    marginRight:
+      8,
   },
 
-  // ===================================================
-  // INFO
-  // ===================================================
+  /* =======================================================
+     INFO
+  ======================================================= */
 
   infoRow: {
-    minHeight: 65,
-    flexDirection: "row",
-    alignItems: "center",
-    borderBottomWidth: 1,
+    minHeight:
+      65,
+
+    flexDirection:
+      "row",
+
+    alignItems:
+      "center",
+
+    borderBottomWidth:
+      1,
   },
 
   infoIcon: {
     width: 42,
     height: 42,
-    borderRadius: 13,
-    backgroundColor: "#FCECEF",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 13,
+
+    borderRadius:
+      13,
+
+    backgroundColor:
+      CARDINAL_SOFT,
+
+    justifyContent:
+      "center",
+
+    alignItems:
+      "center",
+
+    marginRight:
+      13,
   },
 
   infoLabel: {
-    fontSize: 9.5,
-    fontWeight: "700",
-    letterSpacing: 0.6,
+    fontSize:
+      9.5,
+
+    fontWeight:
+      "800",
+
+    letterSpacing:
+      0.6,
   },
 
   infoValue: {
-    fontSize: 13,
-    fontWeight: "700",
-    marginTop: 3,
+    fontSize:
+      13,
+
+    fontWeight:
+      "700",
+
+    marginTop:
+      3,
   },
 
-  // ===================================================
-  // VERIFICATION
-  // ===================================================
+  /* =======================================================
+     VERIFICATION
+  ======================================================= */
 
   verificationBox: {
-    borderRadius: 19,
-    padding: 22,
-    alignItems: "center",
-    marginBottom: 15,
+    borderRadius:
+      19,
+
+    padding:
+      22,
+
+    alignItems:
+      "center",
+
+    marginBottom:
+      15,
   },
 
   verificationCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
+    width:
+      64,
+
+    height:
+      64,
+
+    borderRadius:
+      32,
+
+    justifyContent:
+      "center",
+
+    alignItems:
+      "center",
+
+    marginBottom:
+      12,
   },
 
   verificationTitle: {
-    fontSize: 18,
-    fontWeight: "900",
+    fontSize:
+      18,
+
+    fontWeight:
+      "900",
   },
 
   verificationDescription: {
-    textAlign: "center",
-    fontSize: 11,
-    lineHeight: 17,
-    marginTop: 6,
+    textAlign:
+      "center",
+
+    fontSize:
+      11,
+
+    lineHeight:
+      17,
+
+    marginTop:
+      6,
   },
 
-  // ===================================================
-  // SECURITY
-  // ===================================================
+  /* =======================================================
+     SECURITY
+  ======================================================= */
 
   securityNotice: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 14,
-    padding: 13,
-    marginBottom: 8,
+    flexDirection:
+      "row",
+
+    alignItems:
+      "center",
+
+    borderRadius:
+      15,
+
+    padding:
+      13,
+
+    marginBottom:
+      8,
+  },
+
+  securityIcon: {
+    width:
+      38,
+
+    height:
+      38,
+
+    borderRadius:
+      12,
+
+    backgroundColor:
+      "#FFFFFF",
+
+    justifyContent:
+      "center",
+
+    alignItems:
+      "center",
+
+    marginRight:
+      10,
+  },
+
+  securityNoticeTitle: {
+    fontSize:
+      11.5,
+
+    fontWeight:
+      "900",
+
+    marginBottom:
+      2,
   },
 
   securityNoticeText: {
-    flex: 1,
-    fontSize: 11,
-    lineHeight: 16,
-    marginLeft: 10,
+    fontSize:
+      10.5,
+
+    lineHeight:
+      15,
   },
 
-  // ===================================================
-  // FAQ
-  // ===================================================
+  /* =======================================================
+     FAQ
+  ======================================================= */
 
   faq: {
-    borderRadius: 14,
-    padding: 15,
-    marginBottom: 10,
+    borderRadius:
+      14,
+
+    borderWidth:
+      1,
+
+    padding:
+      15,
+
+    marginBottom:
+      10,
   },
 
   faqHeader: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection:
+      "row",
+
+    alignItems:
+      "center",
   },
 
   faqQuestion: {
     flex: 1,
-    fontSize: 13,
-    fontWeight: "800",
+
+    fontSize:
+      13,
+
+    fontWeight:
+      "800",
   },
 
   faqAnswer: {
-    fontSize: 11,
-    lineHeight: 17,
-    marginTop: 10,
-    paddingRight: 10,
+    fontSize:
+      11,
+
+    lineHeight:
+      17,
+
+    marginTop:
+      10,
+
+    paddingRight:
+      10,
   },
 
-  // ===================================================
-  // ABOUT
-  // ===================================================
+  /* =======================================================
+     ABOUT
+  ======================================================= */
 
-  aboutLogo: {
-    width: 78,
-    height: 78,
-    borderRadius: 24,
-    backgroundColor: DARK_RED,
-    alignSelf: "center",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 13,
+  aboutMark: {
+    width:
+      78,
+
+    height:
+      78,
+
+    borderRadius:
+      24,
+
+    backgroundColor:
+      DARK_RED,
+
+    alignSelf:
+      "center",
+
+    justifyContent:
+      "center",
+
+    alignItems:
+      "center",
+
+    marginBottom:
+      13,
+  },
+
+  aboutMarkText: {
+    color:
+      "#FFFFFF",
+
+    fontSize:
+      35,
+
+    fontWeight:
+      "900",
   },
 
   aboutTitle: {
-    textAlign: "center",
-    fontSize: 23,
-    fontWeight: "900",
+    textAlign:
+      "center",
+
+    fontSize:
+      23,
+
+    fontWeight:
+      "900",
+  },
+
+  aboutUniversity: {
+    textAlign:
+      "center",
+
+    fontSize:
+      8,
+
+    fontWeight:
+      "700",
+
+    letterSpacing:
+      0.5,
+
+    marginTop:
+      4,
   },
 
   aboutDescription: {
-    textAlign: "center",
-    fontSize: 11,
-    lineHeight: 18,
-    marginTop: 8,
-    marginBottom: 15,
+    textAlign:
+      "center",
+
+    fontSize:
+      11,
+
+    lineHeight:
+      18,
+
+    marginTop:
+      10,
+
+    marginBottom:
+      15,
   },
 });

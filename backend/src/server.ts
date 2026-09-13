@@ -4,6 +4,8 @@ import express, {
   NextFunction,
 } from "express";
 
+import sharp from "sharp";
+import axios from "axios";
 import cors from "cors";
 
 import {
@@ -13,6 +15,8 @@ import {
 } from "mongodb";
 
 import dotenv from "dotenv";
+import path from "path";
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 import multer from "multer";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
@@ -22,11 +26,41 @@ import { createWorker } from "tesseract.js";
 
 dotenv.config();
 
-// =====================================================
-// APP
-// =====================================================
+// // =====================================================
+// // APP
+// // =====================================================
+// const verifyTurnstile = async (token: string, ip?: string) => {
+//   try {
+//     const response = await axios.post(
+//       "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+//       new URLSearchParams({
+//         secret: process.env.TURNSTILE_SECRET_KEY || "",
+//         response: token,
+//         ...(ip ? { remoteip: ip } : {}),
+//       }),
+//       {
+//         headers: {
+//           "Content-Type": "application/x-www-form-urlencoded",
+//         },
+//       }
+//     );
+
+//     return response.data;
+//   } catch (error) {
+//     console.error("Turnstile verification error:", error);
+//     return {
+//       success: false,
+//     };
+//   }
+// };
+
+
 
 const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+
 
 app.use(
   cors({
@@ -41,6 +75,7 @@ app.use(
   })
 );
 
+
 // =====================================================
 // ENV
 // =====================================================
@@ -48,7 +83,7 @@ app.use(
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME;
 
-const PORT = Number(process.env.PORT) || 5000;
+const PORT = Number(process.env.PORT) || 5001;
 
 const JWT_SECRET =
   process.env.JWT_SECRET || "CHANGE_THIS_JWT_SECRET";
@@ -415,6 +450,9 @@ const upload = multer({
   },
 });
 
+
+
+
 // =====================================================
 // GOVERNMENT ID OCR
 // =====================================================
@@ -426,10 +464,32 @@ async function extractTextFromImage(
   console.log("STARTING GOVERNMENT ID OCR...");
   console.log("=================================");
 
+  let processedBuffer: Buffer;
+
+  try {
+    processedBuffer = await sharp(imageBuffer)
+      .resize({ width: 2200, withoutEnlargement: false, kernel: "lanczos3" })
+      .grayscale()
+      .normalize()
+      .modulate({ brightness: 1.05 })
+      .sharpen({ sigma: 1.5 })
+      .toBuffer();
+  } catch (preprocessError) {
+    console.error(
+      "IMAGE PREPROCESSING ERROR, using original buffer:",
+      preprocessError
+    );
+    processedBuffer = imageBuffer;
+  }
+
   const worker = await createWorker("eng");
 
   try {
-    const result = await worker.recognize(imageBuffer);
+    await worker.setParameters({
+      tessedit_pageseg_mode: "6" as any, // treat image as a uniform block of text
+    });
+
+    const result = await worker.recognize(processedBuffer);
 
     const text = result.data.text || "";
 
@@ -630,127 +690,32 @@ function governmentIdTypeExistsInOCR(
 
 // =====================================================
 // FIND TUP ID IN OCR
-// TUPC-24-0498 → 240498
+// TUPC-24-0498 
 // =====================================================
 
-function findTupIdInOCR(
-  ocrText: string,
-  enteredTupId: string
-): boolean {
+function findTupIdInOCR(ocrText: string, enteredTupId: string): boolean {
+  const entered = String(enteredTupId || "")
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/_/g, "-");
 
-  const entered =
-    String(enteredTupId || "")
-      .replace(/\D/g, "");
+  const text = String(ocrText || "")
+    .toUpperCase()
+    .replace(/\s+/g, " ");
 
-  const text =
-    String(ocrText || "")
-      .toUpperCase();
-
-  console.log("=================================");
-  console.log("TUP ID OCR MATCHING");
-  console.log("ENTERED TUP ID:", entered);
-  console.log("OCR TEXT:");
-  console.log(text);
-  console.log("=================================");
-
-  if (!entered) {
-    return false;
-  }
-
-  // =================================================
-  // EXPECTED FORMAT:
-  //
+  // Expected format:
   // TUPC-24-0498
-  // TUPC 24 0498
-  // TUPC-24 0498
-  // TUPC 24-0498
-  //
-  // Result:
-  // 240498
-  // =================================================
-
-  const tupIdPattern =
-    /TUPC\s*[-:]?\s*(\d{2})\s*[-:]?\s*(\d{4})/i;
+  const tupIdPattern = /\bTUPC\s*[-:]?\s*(\d{2})\s*[-:]?\s*(\d{4})\b/i;
 
   const match = text.match(tupIdPattern);
 
-  if (match) {
-
-    const extractedTupId =
-      `${match[1]}${match[2]}`;
-
-    console.log(
-      "OCR EXTRACTED TUP ID:",
-      extractedTupId
-    );
-
-    console.log(
-      "USER ENTERED TUP ID:",
-      entered
-    );
-
-    if (extractedTupId === entered) {
-
-      console.log(
-        "✅ TUP ID MATCH SUCCESS"
-      );
-
-      return true;
-    }
-
-    console.log(
-      "❌ TUP ID MATCH FAILED"
-    );
-
+  if (!match) {
     return false;
   }
 
-  // =================================================
-  // FALLBACK
-  //
-  // If OCR fails to recognize "TUPC",
-  // look for 2 digits + 4 digits.
-  //
-  // Example:
-  // 24-0498 → 240498
-  // =================================================
+  const extractedTupId = `TUPC-${match[1]}-${match[2]}`;
 
-  const fallbackPattern =
-    /\b(\d{2})\s*[- ]\s*(\d{4})\b/;
-
-  const fallbackMatch =
-    text.match(fallbackPattern);
-
-  if (fallbackMatch) {
-
-    const extractedTupId =
-      `${fallbackMatch[1]}${fallbackMatch[2]}`;
-
-    console.log(
-      "FALLBACK EXTRACTED TUP ID:",
-      extractedTupId
-    );
-
-    console.log(
-      "USER ENTERED TUP ID:",
-      entered
-    );
-
-    if (extractedTupId === entered) {
-
-      console.log(
-        "✅ TUP ID FALLBACK MATCH SUCCESS"
-      );
-
-      return true;
-    }
-  }
-
-  console.log(
-    "❌ TUP ID NUMBER NOT FOUND IN OCR"
-  );
-
-  return false;
+  return extractedTupId === entered;
 }
 
 // =====================================================
@@ -828,6 +793,37 @@ app.get(
     });
   }
 );
+
+// =====================================================
+// TURNSTILE CAPTCHA PAGE
+// =====================================================
+//
+// IMPORTANT: this route MUST be registered before the
+// 404 catch-all handler below, otherwise Express will
+// always answer with 404 for any request to /captcha.
+//
+// =====================================================
+
+const CAPTCHA_JWT_SECRET =
+  process.env.CAPTCHA_JWT_SECRET ||
+  "CHANGE_THIS_CAPTCHA_JWT_SECRET";
+
+function verifyCaptchaVerificationToken(
+  token: string
+): boolean {
+  try {
+    const decoded =
+      jwt.verify(
+        token,
+        CAPTCHA_JWT_SECRET
+      ) as jwt.JwtPayload;
+
+    return decoded.purpose === "captcha_verified";
+  } catch {
+    return false;
+  }
+}
+
 
 // =====================================================
 // GET ALL USERS
@@ -1227,6 +1223,9 @@ const id =
 //
 // =====================================================
 
+
+
+
 app.post(
   "/api/users",
 
@@ -1263,6 +1262,28 @@ app.post(
       console.log(
         "================================="
       );
+
+const { captchaVerificationToken } = req.body;
+
+if (!captchaVerificationToken) {
+  return res.status(400).json({
+    message: "Please complete the CAPTCHA.",
+  });
+}
+
+const captchaVerified =
+  verifyCaptchaVerificationToken(
+    captchaVerificationToken
+  );
+
+if (!captchaVerified) {
+  return res.status(403).json({
+    message:
+      "CAPTCHA verification failed or expired.",
+  });
+}
+
+console.log("✅ CAPTCHA VERIFIED");
 
       console.log(
         "NEW REGISTRATION REQUEST"
@@ -2381,6 +2402,56 @@ const result =
   await usersCollection()
     .insertOne(newUser);
 
+// ------------------------------------------------
+// SEND FIRST-TIME OTP
+// ------------------------------------------------
+
+const otp = generateOTP();
+const otpHash = hashOTP(otp);
+const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+await usersCollection().updateOne(
+  { _id: result.insertedId },
+  {
+    $set: {
+      otpHash,
+      otpExpiresAt,
+      otpAttempts: 0,
+      otpLastSentAt: new Date(),
+      emailVerified: false,
+      updatedAt: new Date(),
+    },
+  }
+);
+
+const userEmail = getUserEmail(newUser);
+
+if (!userEmail) {
+  return res.status(201).json({
+    message: "Registration successful, but no email was available for OTP.",
+    user: buildSafeUser({
+      ...newUser,
+      _id: result.insertedId,
+    }),
+    otpRequired: true,
+    userId: result.insertedId.toString(),
+  });
+}
+
+await sendOTPViaEmail(userEmail, otp);
+
+return res.status(201).json({
+  message: "Registration successful. OTP sent.",
+  otpRequired: true,
+  userId: result.insertedId.toString(),
+  email: userEmail,
+  maskedEmail: maskEmail(userEmail),
+  user: buildSafeUser({
+    ...newUser,
+    _id: result.insertedId,
+  }),
+});
+
 
 console.log(
   "================================="
@@ -2473,6 +2544,10 @@ return res.status(201).json({
     }
   }
 );
+
+
+  
+
 
 
 // =====================================================
@@ -2840,6 +2915,393 @@ console.log(
   }
 );
 
+// =====================================================
+// VERIFY STUDENT ID
+// STUDENTS ONLY
+// =====================================================
+//
+// 3-WAY VERIFICATION:
+//
+// 1. First Name
+// 2. Last Name
+// 3. TUP ID Number
+//
+// Uses TUP ID FRONT PHOTO for OCR.
+// TUP ID BACK PHOTO is also required.
+//
+
+app.post(
+  "/api/verify-student-id",
+
+  upload.fields([
+    {
+      name: "tupIdFront",
+      maxCount: 1,
+    },
+    {
+      name: "tupIdBack",
+      maxCount: 1,
+    },
+  ]),
+
+  async (
+    req: Request,
+    res: Response
+  ) => {
+
+    try {
+
+      console.log(
+        "================================="
+      );
+
+      console.log(
+        "STUDENT ID VERIFICATION REQUEST"
+      );
+
+      console.log(
+        "================================="
+      );
+
+      // -------------------------------------------------
+      // GET BODY
+      // -------------------------------------------------
+
+      const {
+        firstName,
+        lastName,
+        tupIdNumber,
+      } = req.body;
+
+      console.log(
+        "FIRST NAME:",
+        firstName
+      );
+
+      console.log(
+        "LAST NAME:",
+        lastName
+      );
+
+      console.log(
+        "TUP ID NUMBER:",
+        tupIdNumber
+      );
+
+      // -------------------------------------------------
+      // GET FILES
+      // -------------------------------------------------
+
+      const files =
+        req.files as
+          | {
+              [fieldname: string]:
+                Express.Multer.File[];
+            }
+          | undefined;
+
+      const tupIdFront =
+        getUploadedFile(
+          files,
+          "tupIdFront"
+        );
+
+      const tupIdBack =
+        getUploadedFile(
+          files,
+          "tupIdBack"
+        );
+
+      console.log(
+        "TUP ID FRONT:",
+        tupIdFront
+          ? `${tupIdFront.originalname} (${tupIdFront.size} bytes)`
+          : "NONE"
+      );
+
+      console.log(
+        "TUP ID BACK:",
+        tupIdBack
+          ? `${tupIdBack.originalname} (${tupIdBack.size} bytes)`
+          : "NONE"
+      );
+
+      // -------------------------------------------------
+      // BASIC VALIDATION
+      // -------------------------------------------------
+
+      if (
+        !firstName ||
+        !lastName ||
+        !tupIdNumber
+      ) {
+
+        return res.status(400).json({
+          verified: false,
+
+          message:
+            "First name, last name, and TUP ID number are required.",
+        });
+      }
+
+      // -------------------------------------------------
+      // TUP ID FRONT REQUIRED
+      // -------------------------------------------------
+
+      if (!tupIdFront) {
+
+        return res.status(400).json({
+          verified: false,
+
+          message:
+            "TUP ID front photo is required.",
+        });
+      }
+
+      // -------------------------------------------------
+      // TUP ID BACK REQUIRED
+      // -------------------------------------------------
+
+      if (!tupIdBack) {
+
+        return res.status(400).json({
+          verified: false,
+
+          message:
+            "TUP ID back photo is required.",
+        });
+      }
+
+      // =================================================
+      // OCR TUP ID FRONT
+      // =================================================
+
+      console.log(
+        "================================="
+      );
+
+      console.log(
+        "STARTING STUDENT TUP ID OCR"
+      );
+
+      console.log(
+        "================================="
+      );
+
+      const frontText =
+        await extractTextFromImage(
+          tupIdFront.buffer
+        );
+
+      console.log(
+        "================================="
+      );
+
+      console.log(
+        "STUDENT TUP ID OCR RESULT"
+      );
+
+      console.log(
+        frontText
+      );
+
+      console.log(
+        "================================="
+      );
+
+      // =================================================
+      // 1. FIRST NAME MATCH
+      // =================================================
+
+      const firstNameMatched =
+        nameExistsInOCR(
+          String(firstName),
+          frontText
+        );
+
+      // =================================================
+      // 2. LAST NAME MATCH
+      // =================================================
+
+      const lastNameMatched =
+        nameExistsInOCR(
+          String(lastName),
+          frontText
+        );
+
+      // =================================================
+      // 3. TUP ID NUMBER MATCH
+      // =================================================
+
+      const tupIdMatched =
+        findTupIdInOCR(
+          frontText,
+          String(tupIdNumber)
+        );
+
+      // =================================================
+      // FINAL 3-WAY VERIFICATION
+      // =================================================
+
+      const verified =
+        firstNameMatched &&
+        lastNameMatched &&
+        tupIdMatched;
+
+      // =================================================
+      // LOG RESULT
+      // =================================================
+
+      console.log(
+        "================================="
+      );
+
+      console.log(
+        "STUDENT ID VERIFICATION RESULT"
+      );
+
+      console.log(
+        "FIRST NAME MATCH:",
+        firstNameMatched
+      );
+
+      console.log(
+        "LAST NAME MATCH:",
+        lastNameMatched
+      );
+
+      console.log(
+        "TUP ID NUMBER MATCH:",
+        tupIdMatched
+      );
+
+      console.log(
+        "FINAL VERIFIED:",
+        verified
+      );
+
+      console.log(
+        "================================="
+      );
+
+      // =================================================
+      // FAILED VERIFICATION
+      // =================================================
+
+      if (!verified) {
+
+        const failedChecks: string[] = [];
+
+        if (!firstNameMatched) {
+
+          failedChecks.push(
+            "First Name"
+          );
+        }
+
+        if (!lastNameMatched) {
+
+          failedChecks.push(
+            "Last Name"
+          );
+        }
+
+        if (!tupIdMatched) {
+
+          failedChecks.push(
+            "TUP ID Number"
+          );
+        }
+
+        return res.status(400).json({
+
+          verified: false,
+
+          message:
+            "Student TUP ID verification failed.",
+
+          failedChecks,
+
+          matches: {
+
+            firstName:
+              firstNameMatched,
+
+            lastName:
+              lastNameMatched,
+
+            idNumber:
+              tupIdMatched,
+
+          },
+
+        });
+      }
+
+      // =================================================
+      // SUCCESS
+      // =================================================
+
+      console.log(
+        "================================="
+      );
+
+      console.log(
+        "✅ STUDENT TUP ID VERIFIED"
+      );
+
+      console.log(
+        "================================="
+      );
+
+      return res.json({
+
+        verified: true,
+
+        matches: {
+
+          firstName:
+            firstNameMatched,
+
+          lastName:
+            lastNameMatched,
+
+          idNumber:
+            tupIdMatched,
+
+        },
+
+        message:
+          "Student TUP ID verification successful.",
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "================================="
+      );
+
+      console.error(
+        "STUDENT ID VERIFICATION ERROR:",
+        error
+      );
+
+      console.error(
+        "================================="
+      );
+
+      return res.status(500).json({
+
+        verified: false,
+
+        message:
+          "Unable to verify the TUP ID. Please upload clearer photos.",
+
+      });
+    }
+  }
+);
 
 // =====================================================
 // LOGIN
@@ -2887,6 +3349,11 @@ app.post(
             "Username and password are required.",
         });
       }
+
+      // -------------------------------------------------
+// TURNSTILE CAPTCHA CHECK
+// -------------------------------------------------
+
 
       const cleanUsername =
         String(username)
@@ -2942,6 +3409,11 @@ app.post(
         });
       }
 
+
+
+
+
+      
       // -------------------------------------------------
       // SELLER PENDING
       // -------------------------------------------------
@@ -3005,6 +3477,10 @@ app.post(
 // VERIFY OTP
 // =====================================================
 
+// =====================================================
+// VERIFY OTP
+// =====================================================
+
 app.post(
   "/api/auth/verify-otp",
   async (
@@ -3015,45 +3491,90 @@ app.post(
     try {
 
       const {
+        email,
         userId,
         otp,
       } = req.body;
 
-      if (
-        !userId ||
-        !otp
-      ) {
-
+      if (!otp) {
         return res.status(400).json({
-          message:
-            "User ID and OTP are required.",
+          message: "OTP is required.",
         });
       }
 
+      // -------------------------------------------------
+      // FIND USER
+      // Supports BOTH:
+      // 1. userId
+      // 2. email
+      // -------------------------------------------------
+
+      let user: any = null;
+
       if (
-        !ObjectId.isValid(userId)
+        userId &&
+        ObjectId.isValid(String(userId))
       ) {
 
-        return res.status(400).json({
-          message:
-            "Invalid user ID.",
-        });
-      }
-
-      const user =
-        await usersCollection()
-          .findOne({
+        user =
+          await usersCollection().findOne({
             _id:
-              new ObjectId(userId),
+              new ObjectId(
+                String(userId)
+              ),
           });
 
-      if (!user) {
+      } else if (email) {
 
+        const cleanEmail =
+          String(email)
+            .trim()
+            .toLowerCase();
+
+        user =
+          await usersCollection().findOne({
+            $or: [
+              {
+                gsfeEmail:
+                  cleanEmail,
+              },
+              {
+                gmailEmail:
+                  cleanEmail,
+              },
+              {
+                email:
+                  cleanEmail,
+              },
+            ],
+          });
+      }
+
+      // -------------------------------------------------
+      // USER NOT FOUND
+      // -------------------------------------------------
+
+      if (!user) {
         return res.status(404).json({
           message:
-            "User not found.",
+            "Account associated with this OTP was not found.",
         });
       }
+
+      // -------------------------------------------------
+      // ALREADY VERIFIED
+      // -------------------------------------------------
+
+      if (user.emailVerified === true) {
+        return res.status(400).json({
+          message:
+            "This email is already verified.",
+        });
+      }
+
+      // -------------------------------------------------
+      // OTP EXISTS
+      // -------------------------------------------------
 
       if (
         !user.otpHash ||
@@ -3062,9 +3583,30 @@ app.post(
 
         return res.status(400).json({
           message:
-            "No active OTP found.",
+            "No active OTP found. Please request a new OTP.",
         });
       }
+
+      // -------------------------------------------------
+      // MAX ATTEMPTS
+      // -------------------------------------------------
+
+      const attempts =
+        Number(
+          user.otpAttempts || 0
+        );
+
+      if (attempts >= 5) {
+
+        return res.status(429).json({
+          message:
+            "Too many incorrect OTP attempts. Please request a new code.",
+        });
+      }
+
+      // -------------------------------------------------
+      // CHECK EXPIRATION
+      // -------------------------------------------------
 
       const expiresAt =
         new Date(
@@ -3072,41 +3614,82 @@ app.post(
         );
 
       if (
-        expiresAt.getTime() <
+        expiresAt.getTime() <=
         Date.now()
+      ) {
+
+        await usersCollection()
+          .updateOne(
+            {
+              _id: user._id,
+            },
+            {
+              $set: {
+                otpHash: null,
+                otpExpiresAt: null,
+                otpAttempts: 0,
+                updatedAt:
+                  new Date(),
+              },
+            }
+          );
+
+        return res.status(400).json({
+          message:
+            "OTP has expired. Please request a new code.",
+        });
+      }
+
+      // -------------------------------------------------
+      // NORMALIZE OTP
+      // -------------------------------------------------
+
+      const cleanOTP =
+        String(otp)
+          .trim();
+
+      if (
+        !/^\d{6}$/.test(
+          cleanOTP
+        )
       ) {
 
         return res.status(400).json({
           message:
-            "OTP has expired.",
+            "OTP must be a 6-digit code.",
         });
       }
 
+      // -------------------------------------------------
+      // HASH INPUT
+      // -------------------------------------------------
+
       const hashedInput =
         hashOTP(
-          String(otp)
+          cleanOTP
         );
+
+      // -------------------------------------------------
+      // INVALID OTP
+      // -------------------------------------------------
 
       if (
         hashedInput !==
         user.otpHash
       ) {
 
-        const attempts =
-          Number(
-            user.otpAttempts || 0
-          ) + 1;
+        const newAttempts =
+          attempts + 1;
 
         await usersCollection()
           .updateOne(
             {
-              _id:
-                new ObjectId(userId),
+              _id: user._id,
             },
             {
               $set: {
                 otpAttempts:
-                  attempts,
+                  newAttempts,
                 updatedAt:
                   new Date(),
               },
@@ -3116,55 +3699,94 @@ app.post(
         return res.status(400).json({
           message:
             "Invalid OTP.",
+          attemptsRemaining:
+            Math.max(
+              0,
+              5 - newAttempts
+            ),
         });
       }
+
+      // =================================================
+      // OTP SUCCESS
+      // =================================================
 
       await usersCollection()
         .updateOne(
           {
-            _id:
-              new ObjectId(userId),
+            _id: user._id,
           },
           {
             $set: {
-              otpHash:
-                null,
 
-              otpExpiresAt:
-                null,
-
-              otpAttempts:
-                0,
+              // IMPORTANT
+              emailVerified:
+                true,
 
               otpVerifiedAt:
                 new Date(),
 
+              otpAttempts:
+                0,
+
               updatedAt:
                 new Date(),
+            },
+
+            $unset: {
+              otpHash: "",
+              otpExpiresAt: "",
             },
           }
         );
 
+      // -------------------------------------------------
+      // GET UPDATED USER
+      // -------------------------------------------------
+
       const updatedUser =
         await usersCollection()
           .findOne({
-            _id:
-              new ObjectId(userId),
+            _id: user._id,
           });
 
-      const token =
-        updatedUser
-          ? createJWT(
-              updatedUser
-            )
-          : null;
+      console.log(
+        "================================="
+      );
+
+      console.log(
+        "✅ ACCOUNT OTP VERIFIED"
+      );
+
+      console.log(
+        "USERNAME:",
+        user.username
+      );
+
+      console.log(
+        "EMAIL:",
+        maskEmail(
+          getUserEmail(user)
+        )
+      );
+
+      console.log(
+        "================================="
+      );
 
       return res.json({
+
+        success:
+          true,
 
         message:
           "OTP verified successfully.",
 
-        token,
+        userId:
+          String(user._id),
+
+        emailVerified:
+          true,
 
         user:
           updatedUser
@@ -3193,6 +3815,10 @@ app.post(
 // RESEND OTP
 // =====================================================
 
+// =====================================================
+// RESEND OTP
+// =====================================================
+
 app.post(
   "/api/auth/resend-otp",
   async (
@@ -3203,54 +3829,139 @@ app.post(
     try {
 
       const {
+        email,
         userId,
       } = req.body;
 
-      if (
-        !userId
-      ) {
+      // -------------------------------------------------
+      // FIND USER
+      // -------------------------------------------------
 
-        return res.status(400).json({
-          message:
-            "User ID is required.",
-        });
-      }
+      let user: any = null;
 
       if (
-        !ObjectId.isValid(userId)
+        userId &&
+        ObjectId.isValid(
+          String(userId)
+        )
       ) {
 
-        return res.status(400).json({
-          message:
-            "Invalid user ID.",
-        });
+        user =
+          await usersCollection()
+            .findOne({
+              _id:
+                new ObjectId(
+                  String(userId)
+                ),
+            });
+
+      } else if (email) {
+
+        const cleanEmail =
+          String(email)
+            .trim()
+            .toLowerCase();
+
+        user =
+          await usersCollection()
+            .findOne({
+              $or: [
+                {
+                  gsfeEmail:
+                    cleanEmail,
+                },
+                {
+                  gmailEmail:
+                    cleanEmail,
+                },
+                {
+                  email:
+                    cleanEmail,
+                },
+              ],
+            });
       }
 
-      const user =
-        await usersCollection()
-          .findOne({
-            _id:
-              new ObjectId(userId),
-          });
+      // -------------------------------------------------
+      // USER NOT FOUND
+      // -------------------------------------------------
 
       if (!user) {
-
         return res.status(404).json({
           message:
-            "User not found.",
+            "Account associated with this email was not found.",
         });
       }
 
-      const email =
+      // -------------------------------------------------
+      // ALREADY VERIFIED
+      // -------------------------------------------------
+
+      if (
+        user.emailVerified === true
+      ) {
+
+        return res.status(400).json({
+          message:
+            "This email is already verified.",
+        });
+      }
+
+      // -------------------------------------------------
+      // GET EMAIL
+      // -------------------------------------------------
+
+      const userEmail =
         getUserEmail(user);
 
-      if (!email) {
+      if (!userEmail) {
 
         return res.status(400).json({
           message:
             "No email address is associated with this account.",
         });
       }
+
+      // -------------------------------------------------
+      // RESEND COOLDOWN
+      // 60 SECONDS
+      // -------------------------------------------------
+
+      if (
+        user.otpLastSentAt
+      ) {
+
+        const lastSent =
+          new Date(
+            user.otpLastSentAt
+          ).getTime();
+
+        const secondsPassed =
+          Math.floor(
+            (
+              Date.now() -
+              lastSent
+            ) / 1000
+          );
+
+        if (
+          secondsPassed < 60
+        ) {
+
+          return res.status(429).json({
+            message:
+              `Please wait ${
+                60 - secondsPassed
+              } seconds before requesting another OTP.`,
+            retryAfter:
+              60 - secondsPassed,
+          });
+        }
+      }
+
+      // -------------------------------------------------
+      // GENERATE NEW OTP
+      // -------------------------------------------------
 
       const otp =
         generateOTP();
@@ -3264,16 +3975,15 @@ app.post(
           10 * 60 * 1000
         );
 
-      await sendOTPViaEmail(
-        email,
-        otp
-      );
+      // -------------------------------------------------
+      // SAVE OTP FIRST
+      // -------------------------------------------------
 
       await usersCollection()
         .updateOne(
           {
             _id:
-              new ObjectId(userId),
+              user._id,
           },
           {
             $set: {
@@ -3295,13 +4005,83 @@ app.post(
           }
         );
 
+      // -------------------------------------------------
+      // SEND EMAIL
+      // -------------------------------------------------
+
+      try {
+
+        await sendOTPViaEmail(
+          userEmail,
+          otp
+        );
+
+      } catch (mailError) {
+
+        // Remove OTP if email failed
+        await usersCollection()
+          .updateOne(
+            {
+              _id:
+                user._id,
+            },
+            {
+              $unset: {
+                otpHash: "",
+                otpExpiresAt: "",
+              },
+              $set: {
+                updatedAt:
+                  new Date(),
+              },
+            }
+          );
+
+        throw mailError;
+      }
+
+      console.log(
+        "================================="
+      );
+
+      console.log(
+        "✅ OTP RESENT"
+      );
+
+      console.log(
+        "USERNAME:",
+        user.username
+      );
+
+      console.log(
+        "EMAIL:",
+        maskEmail(
+          userEmail
+        )
+      );
+
+      console.log(
+        "================================="
+      );
+
       return res.json({
 
+        success:
+          true,
+
         message:
-          "OTP has been resent.",
+          "A new OTP has been sent to your email.",
+
+        userId:
+          String(user._id),
+
+        email:
+          userEmail,
 
         maskedEmail:
-          maskEmail(email),
+          maskEmail(
+            userEmail
+          ),
 
         maskedPhone:
           maskPhone(
@@ -3321,6 +4101,546 @@ app.post(
           error instanceof Error
             ? error.message
             : "Failed to resend OTP.",
+      });
+    }
+  }
+);
+
+// =====================================================
+// FORGOT PASSWORD - SEND OTP
+// =====================================================
+
+app.post(
+  "/api/auth/forgot-password",
+  async (
+    req: Request,
+    res: Response
+  ) => {
+
+    try {
+
+      const { username } = req.body;
+
+      console.log("=================================");
+      console.log("FORGOT PASSWORD REQUEST");
+      console.log("Username:", username);
+      console.log("=================================");
+
+      if (!username) {
+        return res.status(400).json({
+          message: "Username is required.",
+        });
+      }
+
+      const cleanUsername = String(username).trim();
+
+      const user =
+        await usersCollection().findOne({
+          username: cleanUsername,
+        });
+
+      if (!user) {
+        return res.status(404).json({
+          message: "No account was found with that username.",
+        });
+      }
+
+      // -------------------------------------------------
+      // ACCOUNT STATUS
+      // -------------------------------------------------
+
+      if (user.accountStatus === "Rejected") {
+        return res.status(403).json({
+          message:
+            "This account registration was rejected.",
+        });
+      }
+
+      if (user.accountStatus === "Pending") {
+        return res.status(403).json({
+          message:
+            "This account is still pending admin approval.",
+        });
+      }
+
+      const token = createJWT(user);
+
+                // ------------------------------------------------
+          // FIRST-TIME ACCOUNT OTP CHECK
+          // ------------------------------------------------
+
+          if (user.emailVerified === false) {
+            const userEmail = getUserEmail(user);
+
+            if (!userEmail) {
+              return res.status(400).json({
+                message: "No email is available for OTP verification.",
+              });
+            }
+
+            const otp = generateOTP();
+            const otpHash = hashOTP(otp);
+            const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+            await usersCollection().updateOne(
+              { _id: user._id },
+              {
+                $set: {
+                  otpHash,
+                  otpExpiresAt,
+                  otpAttempts: 0,
+                  otpLastSentAt: new Date(),
+                  updatedAt: new Date(),
+                },
+              }
+            );
+
+            await sendOTPViaEmail(userEmail, otp);
+
+            return res.json({
+              message: "OTP verification required.",
+              otpRequired: true,
+              userId: user._id.toString(),
+              email: userEmail,
+              maskedEmail: maskEmail(userEmail),
+            });
+          }
+
+
+      // -------------------------------------------------
+      // GET REGISTERED EMAIL
+      // -------------------------------------------------
+
+      const email = getUserEmail(user);
+
+      if (!email) {
+        return res.status(400).json({
+          message:
+            "No email address is associated with this account.",
+        });
+      }
+
+      // -------------------------------------------------
+      // GENERATE OTP
+      // -------------------------------------------------
+
+      const otp = generateOTP();
+
+      const otpHash = hashOTP(otp);
+
+      const expiresAt =
+        new Date(
+          Date.now() + 10 * 60 * 1000
+        );
+
+      // -------------------------------------------------
+      // SEND OTP
+      // -------------------------------------------------
+
+      await sendOTPViaEmail(
+        email,
+        otp
+      );
+
+      // -------------------------------------------------
+      // SAVE OTP
+      // -------------------------------------------------
+
+      await usersCollection().updateOne(
+        {
+          _id: user._id,
+        },
+        {
+          $set: {
+            otpHash,
+            otpExpiresAt: expiresAt,
+            otpAttempts: 0,
+            otpLastSentAt: new Date(),
+            updatedAt: new Date(),
+          },
+        }
+      );
+
+      console.log("=================================");
+      console.log("FORGOT PASSWORD OTP SENT");
+      console.log("Username:", user.username);
+      console.log("Email:", maskEmail(email));
+      console.log("=================================");
+
+      return res.json({
+        success: true,
+        message:
+          "A verification code has been sent to your registered email.",
+        userId: String(user._id),
+        maskedEmail: maskEmail(email),
+      });
+
+    } catch (error) {
+
+      console.error(
+        "FORGOT PASSWORD SEND OTP ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to send password reset OTP.",
+      });
+    }
+  }
+);
+
+// =====================================================
+// FORGOT PASSWORD - VERIFY OTP
+// =====================================================
+
+app.post(
+  "/api/auth/forgot-password/verify-otp",
+  async (
+    req: Request,
+    res: Response
+  ) => {
+
+    try {
+
+      const {
+        userId,
+        otp,
+      } = req.body;
+
+      if (!userId || !otp) {
+        return res.status(400).json({
+          message:
+            "User ID and OTP are required.",
+        });
+      }
+
+      if (!ObjectId.isValid(userId)) {
+        return res.status(400).json({
+          message:
+            "Invalid user ID.",
+        });
+      }
+
+      const user =
+        await usersCollection().findOne({
+          _id: new ObjectId(userId),
+        });
+
+      if (!user) {
+        return res.status(404).json({
+          message:
+            "User not found.",
+        });
+      }
+
+      // -------------------------------------------------
+      // CHECK OTP EXISTS
+      // -------------------------------------------------
+
+      if (
+        !user.otpHash ||
+        !user.otpExpiresAt
+      ) {
+        return res.status(400).json({
+          message:
+            "No active password reset OTP found.",
+        });
+      }
+
+      // -------------------------------------------------
+      // CHECK EXPIRATION
+      // -------------------------------------------------
+
+      const expiresAt =
+        new Date(
+          user.otpExpiresAt
+        );
+
+      if (
+        expiresAt.getTime() <
+        Date.now()
+      ) {
+
+        await usersCollection().updateOne(
+          {
+            _id: user._id,
+          },
+          {
+            $set: {
+              emailVerified: true,
+              otpHash: null,
+              otpExpiresAt: null,
+              otpAttempts: 0,
+              otpVerifiedAt: new Date(),
+              updatedAt: new Date(),
+            },
+          }
+        );
+
+        return res.status(400).json({
+          message:
+            "OTP has expired. Please request a new code.",
+        });
+      }
+
+      // -------------------------------------------------
+      // MAX ATTEMPTS
+      // -------------------------------------------------
+
+      const attempts =
+        Number(user.otpAttempts || 0);
+
+      if (attempts >= 5) {
+
+        return res.status(429).json({
+          message:
+            "Too many incorrect OTP attempts. Please request a new code.",
+        });
+      }
+
+      // -------------------------------------------------
+      // COMPARE OTP
+      // -------------------------------------------------
+
+      const hashedInput =
+        hashOTP(
+          String(otp).trim()
+        );
+
+      if (
+        hashedInput !==
+        user.otpHash
+      ) {
+
+        const newAttempts =
+          attempts + 1;
+
+        await usersCollection().updateOne(
+          {
+            _id: user._id,
+          },
+          {
+            $set: {
+              otpAttempts: newAttempts,
+              updatedAt: new Date(),
+            },
+          }
+        );
+
+        return res.status(400).json({
+          message:
+            "Invalid OTP.",
+          attemptsRemaining:
+            Math.max(
+              0,
+              5 - newAttempts
+            ),
+        });
+      }
+
+      // -------------------------------------------------
+      // OTP VERIFIED
+      // -------------------------------------------------
+
+      await usersCollection().updateOne(
+        {
+          _id: user._id,
+        },
+        {
+          $set: {
+            otpVerifiedAt: new Date(),
+            otpAttempts: 0,
+            updatedAt: new Date(),
+          },
+        }
+      );
+
+      console.log("=================================");
+      console.log("FORGOT PASSWORD OTP VERIFIED");
+      console.log("Username:", user.username);
+      console.log("=================================");
+
+      return res.json({
+        success: true,
+        message:
+          "OTP verified successfully.",
+        userId: String(user._id),
+      });
+
+    } catch (error) {
+
+      console.error(
+        "FORGOT PASSWORD VERIFY OTP ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to verify password reset OTP.",
+      });
+    }
+  }
+);
+
+// =====================================================
+// FORGOT PASSWORD - RESET PASSWORD
+// =====================================================
+
+app.post(
+  "/api/auth/forgot-password/reset",
+  async (
+    req: Request,
+    res: Response
+  ) => {
+
+    try {
+
+      const {
+        userId,
+        newPassword,
+      } = req.body;
+
+      if (
+        !userId ||
+        !newPassword
+      ) {
+        return res.status(400).json({
+          message:
+            "User ID and new password are required.",
+        });
+      }
+
+      if (!ObjectId.isValid(userId)) {
+        return res.status(400).json({
+          message:
+            "Invalid user ID.",
+        });
+      }
+
+      // -------------------------------------------------
+      // PASSWORD LENGTH
+      // -------------------------------------------------
+
+      if (
+        String(newPassword).length < 8
+      ) {
+        return res.status(400).json({
+          message:
+            "New password must be at least 8 characters.",
+        });
+      }
+
+      const user =
+        await usersCollection().findOne({
+          _id: new ObjectId(userId),
+        });
+
+          if (!user) {
+            return res.status(404).json({
+              message: "User not found.",
+            });
+          }
+
+          if (user.emailVerified !== false) {
+            return res.status(400).json({
+              message: "OTP verification is not required for this account.",
+            });
+          }
+
+      // -------------------------------------------------
+      // REQUIRE RECENT OTP VERIFICATION
+      // -------------------------------------------------
+
+      if (!user.otpVerifiedAt) {
+        return res.status(403).json({
+          message:
+            "Please verify the password reset OTP first.",
+        });
+      }
+
+      const verifiedAt =
+        new Date(
+          user.otpVerifiedAt
+        );
+
+      // OTP verification is valid only for 10 minutes
+      const verificationAge =
+        Date.now() -
+        verifiedAt.getTime();
+
+      if (
+        verificationAge >
+        10 * 60 * 1000
+      ) {
+
+        return res.status(403).json({
+          message:
+            "Password reset session has expired. Please request a new OTP.",
+        });
+      }
+
+      // -------------------------------------------------
+      // HASH NEW PASSWORD
+      // -------------------------------------------------
+
+      const hashedPassword =
+        await bcrypt.hash(
+          String(newPassword),
+          12
+        );
+
+      // -------------------------------------------------
+      // UPDATE PASSWORD
+      // -------------------------------------------------
+
+      await usersCollection().updateOne(
+        {
+          _id: user._id,
+        },
+        {
+          $set: {
+            password: hashedPassword,
+
+// ------------------------------------------------
+// OTP / FIRST-TIME VERIFICATION
+// ------------------------------------------------
+
+            emailVerified: false,
+            otpHash: null,
+            otpExpiresAt: null,
+            otpAttempts: 0,
+            otpLastSentAt: null,
+            otpVerifiedAt: null,
+
+            updatedAt: new Date(),
+          },
+        }
+      );
+
+      console.log("=================================");
+      console.log("PASSWORD RESET SUCCESS");
+      console.log("Username:", user.username);
+      console.log("=================================");
+
+      return res.json({
+        success: true,
+        message:
+          "Password reset successfully.",
+      });
+
+    } catch (error) {
+
+      console.error(
+        "FORGOT PASSWORD RESET ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to reset password.",
       });
     }
   }
@@ -4075,32 +5395,14 @@ await usersCollection().createIndex(
     // START EXPRESS
     // -------------------------------------------------
 
-    app.listen(
-      PORT,
-      "0.0.0.0",
-      () => {
-
-        console.log(
-          "================================="
-        );
-
-        console.log(
-          `Server running on port ${PORT}`
-        );
-
-        console.log(
-          `Local: http://localhost:${PORT}`
-        );
-
-        console.log(
-          `API: http://localhost:${PORT}/api`
-        );
-
-        console.log(
-          "================================="
-        );
-      }
-    );
+app.listen(PORT, "0.0.0.0", () => {
+  console.log("=================================");
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Local: http://localhost:${PORT}`);
+  console.log(`Network: http://192.168.18.24:${PORT}`);
+  console.log(`API: http://192.168.18.24:${PORT}/api`);
+  console.log("=================================");
+});
 
   } catch (error) {
 
@@ -4112,6 +5414,10 @@ await usersCollection().createIndex(
     process.exit(1);
   }
 }
+
+
+
+
 
 // =====================================================
 // START

@@ -1,8 +1,4 @@
-import React, {
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 import {
   View,
@@ -18,53 +14,34 @@ import {
   ScrollView,
 } from "react-native";
 
-import {
-  SafeAreaView,
-} from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router, useLocalSearchParams } from "expo-router";
 
-import {
-  Ionicons,
-} from "@expo/vector-icons";
-
-import AsyncStorage from
-  "@react-native-async-storage/async-storage";
-
-import {
-  router,
-} from "expo-router";
-
-// ======================================================
-// CONFIG
-// ======================================================
+/* =========================================================
+   CONFIG
+========================================================= */
 
 const BASE_URL = (
   process.env.EXPO_PUBLIC_API_URL ||
   "http://192.168.18.24:5000"
 ).replace(/\/+$/, "");
 
-const API_URL =
-  BASE_URL.endsWith("/api")
-    ? BASE_URL
-    : `${BASE_URL}/api`;
+const API_URL = BASE_URL.endsWith("/api")
+  ? BASE_URL
+  : `${BASE_URL}/api`;
 
-// ======================================================
-// AUTH STORAGE KEYS
-// ======================================================
-// IMPORTANT:
-// These MUST match your settings.tsx
+/* =========================================================
+   AUTH STORAGE KEYS
+========================================================= */
 
-const TOKEN_STORAGE_KEY =
-  "@tuporderup_token";
+const TOKEN_STORAGE_KEY = "@tuporderup_token";
+const USER_STORAGE_KEY = "@tuporderup_user";
+const LOGIN_STATUS_KEY = "@tuporderup_logged_in";
 
-const USER_STORAGE_KEY =
-  "@tuporderup_user";
-
-const LOGIN_STATUS_KEY =
-  "@tuporderup_logged_in";
-
-// Old keys from previous version.
-// We remove these after successful login
-// to prevent storage conflicts.
+const SECURITY_PENDING_KEY =
+  "@tuporderup_security_pending";
 
 const OLD_AUTH_KEYS = [
   "auth_token",
@@ -72,9 +49,9 @@ const OLD_AUTH_KEYS = [
   "is_logged_in",
 ];
 
-// ======================================================
-// PENDING OTP KEYS
-// ======================================================
+/* =========================================================
+   PENDING OTP KEYS
+========================================================= */
 
 const PENDING_USER_ID_KEY =
   "pending_otp_user_id";
@@ -91,59 +68,75 @@ const PENDING_CHANNELS_KEY =
 const PENDING_CONTACTS_KEY =
   "pending_otp_contacts";
 
-// ======================================================
-// TYPES
-// ======================================================
+/* =========================================================
+   REMEMBER ME PENDING KEYS
+========================================================= */
 
-interface PendingUser {
-  userId: string;
-  email?: string | null;
-  maskedEmail?: string | null;
-}
+const PENDING_REMEMBER_ME_KEY =
+  "pending_otp_remember_me";
 
-// ======================================================
-// SCREEN
-// ======================================================
+const PENDING_USERNAME_KEY =
+  "pending_otp_username";
+
+const PENDING_PASSWORD_KEY =
+  "pending_otp_password";
+
+/* =========================================================
+   REMEMBER ME SAVED KEYS
+========================================================= */
+
+const SAVED_USERNAME_KEY =
+  "@tuporderup_saved_username";
+
+const SAVED_PASSWORD_KEY =
+  "@tuporderup_saved_password";
+
+const REMEMBER_ME_KEY =
+  "@tuporderup_remember_me";
+
+/* =========================================================
+   OTP SCREEN
+========================================================= */
 
 export default function OTPScreen() {
-  // ====================================================
-  // STATE
-  // ====================================================
+  /* =======================================================
+     ROUTE PARAMS
+  ======================================================= */
 
-  const [
-    userId,
-    setUserId,
-  ] = useState("");
+  const params = useLocalSearchParams<{
+    email?: string;
+    userId?: string;
+  }>();
 
-  const [
-    email,
-    setEmail,
-  ] = useState("");
+  const routeEmail =
+    typeof params.email === "string"
+      ? params.email
+      : "";
 
-  const [
-    otp,
-    setOtp,
-  ] = useState("");
+  const routeUserId =
+    typeof params.userId === "string"
+      ? params.userId
+      : "";
 
-  const [
-    loading,
-    setLoading,
-  ] = useState(false);
+  /* =======================================================
+     STATE
+  ======================================================= */
 
-  const [
-    resending,
-    setResending,
-  ] = useState(false);
+  const [userId, setUserId] = useState("");
+  const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState("");
 
-  const [
-    resendSeconds,
-    setResendSeconds,
-  ] = useState(60);
+  const [loading, setLoading] =
+    useState(false);
 
-  const [
-    initialized,
-    setInitialized,
-  ] = useState(false);
+  const [resending, setResending] =
+    useState(false);
+
+  const [resendSeconds, setResendSeconds] =
+    useState(60);
+
+  const [initialized, setInitialized] =
+    useState(false);
 
   const [
     verifyingAutomatically,
@@ -153,134 +146,196 @@ export default function OTPScreen() {
   const inputRef =
     useRef<TextInput>(null);
 
-  // Prevent duplicate verification requests
   const verificationInProgress =
     useRef(false);
 
-  // ====================================================
-  // LOAD PENDING LOGIN
-  // ====================================================
+  /* =======================================================
+     LOAD OTP SESSION
+  ======================================================= */
 
   useEffect(() => {
-    loadPendingLogin();
+    loadPendingOTP();
   }, []);
 
-  // ====================================================
-  // RESEND COUNTDOWN
-  // ====================================================
+  /* =======================================================
+     RESEND COUNTDOWN
+  ======================================================= */
 
   useEffect(() => {
     if (resendSeconds <= 0) {
       return;
     }
 
-    const timer =
-      setInterval(() => {
-        setResendSeconds(
-          (previous) =>
-            previous > 0
-              ? previous - 1
-              : 0
-        );
-      }, 1000);
+    const timer = setInterval(() => {
+      setResendSeconds((previous) =>
+        previous > 0
+          ? previous - 1
+          : 0
+      );
+    }, 1000);
 
     return () => {
       clearInterval(timer);
     };
   }, [resendSeconds]);
 
-  // ====================================================
-  // LOAD PENDING LOGIN
-  // ====================================================
+  /* =======================================================
+     LOAD OTP SESSION
+  ======================================================= */
 
-  const loadPendingLogin =
-    async () => {
-      try {
-        const storedUserId =
-          await AsyncStorage.getItem(
+  const loadPendingOTP = async () => {
+    try {
+      /*
+       * First priority:
+       * userId passed through route
+       */
+      let storedUserId = routeUserId;
+
+      /*
+       * If route does not contain userId,
+       * get it from AsyncStorage.
+       */
+      if (!storedUserId) {
+        storedUserId =
+          (await AsyncStorage.getItem(
             PENDING_USER_ID_KEY
-          );
+          )) || "";
+      }
 
-        const storedEmail =
-          await AsyncStorage.getItem(
+      /*
+       * Email from register.tsx route
+       */
+      let storedEmail = routeEmail;
+
+      /*
+       * If route has no email,
+       * get it from AsyncStorage.
+       */
+      if (!storedEmail) {
+        storedEmail =
+          (await AsyncStorage.getItem(
             PENDING_EMAIL_KEY
-          );
+          )) || "";
+      }
 
-        const storedMaskedEmail =
-          await AsyncStorage.getItem(
-            PENDING_MASKED_EMAIL_KEY
-          );
-
-        // ------------------------------------------------
-        // NO USER ID
-        // ------------------------------------------------
-
-        if (!storedUserId) {
-          Alert.alert(
-            "Session Expired",
-            "Your login session has expired. Please login again.",
-            [
-              {
-                text: "OK",
-                onPress: () => {
-                  router.replace(
-                    "../login"
-                  );
-                },
-              },
-            ]
-          );
-
-          return;
-        }
-
-        // ------------------------------------------------
-        // SET DATA
-        // ------------------------------------------------
-
-        setUserId(
-          storedUserId
+      const storedMaskedEmail =
+        await AsyncStorage.getItem(
+          PENDING_MASKED_EMAIL_KEY
         );
 
-        setEmail(
-          storedMaskedEmail ||
-            storedEmail ||
-            ""
-        );
-
-        setInitialized(true);
-
-        // ------------------------------------------------
-        // FOCUS OTP INPUT
-        // ------------------------------------------------
-
-        setTimeout(() => {
-          inputRef.current?.focus();
-        }, 500);
-
-      } catch (error) {
-        console.error(
-          "LOAD PENDING OTP ERROR:",
-          error
-        );
-
-        Alert.alert(
-          "Error",
-          "Unable to load your verification session."
+      /*
+       * If route email exists,
+       * save it for resend/back navigation.
+       */
+      if (storedEmail) {
+        await AsyncStorage.setItem(
+          PENDING_EMAIL_KEY,
+          storedEmail
         );
       }
-    };
 
-  // ====================================================
-  // VERIFY OTP
-  // ====================================================
+      /*
+       * If route userId exists,
+       * save it as pending OTP user.
+       */
+      if (storedUserId) {
+        await AsyncStorage.setItem(
+          PENDING_USER_ID_KEY,
+          storedUserId
+        );
+      }
+
+      /*
+       * Validate user ID.
+       */
+      if (!storedUserId) {
+        Alert.alert(
+          "Session Expired",
+          "Your verification session is missing. Please register or login again.",
+          [
+            {
+              text: "OK",
+              onPress: () => {
+                router.replace("../login");
+              },
+            },
+          ]
+        );
+
+        return;
+      }
+
+      /*
+       * Set screen state.
+       */
+      setUserId(storedUserId);
+
+      setEmail(
+        storedMaskedEmail ||
+          storedEmail ||
+          ""
+      );
+
+      setInitialized(true);
+
+      /*
+       * Focus OTP input.
+       */
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 500);
+
+      console.log(
+        "================================"
+      );
+
+      console.log(
+        "OTP SESSION LOADED"
+      );
+
+      console.log(
+        "USER ID:",
+        storedUserId
+      );
+
+      console.log(
+        "EMAIL:",
+        storedEmail || "N/A"
+      );
+
+      console.log(
+        "ROUTE EMAIL:",
+        routeEmail || "N/A"
+      );
+
+      console.log(
+        "ROUTE USER ID:",
+        routeUserId || "N/A"
+      );
+
+      console.log(
+        "================================"
+      );
+    } catch (error) {
+      console.error(
+        "LOAD PENDING OTP ERROR:",
+        error
+      );
+
+      Alert.alert(
+        "Error",
+        "Unable to load your verification session."
+      );
+    }
+  };
+
+  /* =======================================================
+     VERIFY OTP
+  ======================================================= */
 
   const verifyOTP = async (
     otpCode?: string
   ) => {
-    // Use supplied code if available.
-    // Otherwise use current state.
-
     const cleanOTP = (
       otpCode !== undefined
         ? otpCode
@@ -289,21 +344,19 @@ export default function OTPScreen() {
       .replace(/\D/g, "")
       .slice(0, 6);
 
-    // --------------------------------------------------
-    // VALIDATE USER
-    // --------------------------------------------------
+    /* -----------------------------------------------------
+       VALIDATE USER
+    ----------------------------------------------------- */
 
     if (!userId) {
       Alert.alert(
         "Session Expired",
-        "Your login session is missing. Please login again.",
+        "Your verification session is missing. Please register or login again.",
         [
           {
             text: "OK",
             onPress: () => {
-              router.replace(
-                "../login"
-              );
+              router.replace("../login");
             },
           },
         ]
@@ -312,9 +365,9 @@ export default function OTPScreen() {
       return;
     }
 
-    // --------------------------------------------------
-    // VALIDATE OTP
-    // --------------------------------------------------
+    /* -----------------------------------------------------
+       VALIDATE OTP
+    ----------------------------------------------------- */
 
     if (cleanOTP.length !== 6) {
       Alert.alert(
@@ -325,9 +378,9 @@ export default function OTPScreen() {
       return;
     }
 
-    // --------------------------------------------------
-    // PREVENT DUPLICATE REQUEST
-    // --------------------------------------------------
+    /* -----------------------------------------------------
+       PREVENT DUPLICATE REQUEST
+    ----------------------------------------------------- */
 
     if (
       verificationInProgress.current
@@ -359,37 +412,47 @@ export default function OTPScreen() {
         userId
       );
 
-      // ------------------------------------------------
-      // API REQUEST
-      // ------------------------------------------------
+      console.log(
+        "OTP:",
+        cleanOTP
+      );
 
-      const response =
-        await fetch(
-          `${API_URL}/auth/verify-otp`,
-          {
-            method: "POST",
+      console.log(
+        "================================"
+      );
 
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
+      /* ---------------------------------------------------
+         API REQUEST
+      --------------------------------------------------- */
 
-            body: JSON.stringify({
-              userId,
-              otp: cleanOTP,
-            }),
-          }
-        );
+      const response = await fetch(
+        `${API_URL}/auth/verify-otp`,
+        {
+          method: "POST",
 
-      // ------------------------------------------------
-      // READ RESPONSE SAFELY
-      // ------------------------------------------------
+          headers: {
+            "Content-Type":
+              "application/json",
+
+            Accept:
+              "application/json",
+          },
+
+          body: JSON.stringify({
+            userId,
+            otp: cleanOTP,
+          }),
+        }
+      );
+
+      /* ---------------------------------------------------
+         RESPONSE
+      --------------------------------------------------- */
 
       let data: any = {};
 
       try {
-        data =
-          await response.json();
+        data = await response.json();
       } catch {
         data = {};
       }
@@ -399,9 +462,9 @@ export default function OTPScreen() {
         data
       );
 
-      // ------------------------------------------------
-      // API ERROR
-      // ------------------------------------------------
+      /* ---------------------------------------------------
+         API ERROR
+      --------------------------------------------------- */
 
       if (!response.ok) {
         Alert.alert(
@@ -419,9 +482,9 @@ export default function OTPScreen() {
         return;
       }
 
-      // ------------------------------------------------
-      // SUCCESS
-      // ------------------------------------------------
+      /* ===================================================
+         SUCCESSFUL OTP VERIFICATION
+      =================================================== */
 
       if (
         data.success &&
@@ -432,46 +495,208 @@ export default function OTPScreen() {
           "OTP VERIFIED SUCCESSFULLY"
         );
 
-        // ==================================================
-        // SAVE AUTH TOKEN
-        // ==================================================
+        /* =================================================
+           REMEMBER ME
+        ================================================= */
+
+        const rememberMe =
+          (
+            await AsyncStorage.getItem(
+              PENDING_REMEMBER_ME_KEY
+            )
+          ) === "true";
+
+        const pendingUsername =
+          await AsyncStorage.getItem(
+            PENDING_USERNAME_KEY
+          );
+
+        const pendingPassword =
+          await AsyncStorage.getItem(
+            PENDING_PASSWORD_KEY
+          );
+
+        /* =================================================
+           SAVE REMEMBERED ACCOUNT
+        ================================================= */
+
+        if (
+          rememberMe &&
+          pendingUsername &&
+          pendingPassword
+        ) {
+          await AsyncStorage.multiSet([
+            [
+              REMEMBER_ME_KEY,
+              "true",
+            ],
+
+            [
+              SAVED_USERNAME_KEY,
+              pendingUsername,
+            ],
+
+            [
+              SAVED_PASSWORD_KEY,
+              pendingPassword,
+            ],
+          ]);
+
+          console.log(
+            "================================"
+          );
+
+          console.log(
+            "REMEMBER ME ENABLED"
+          );
+
+          console.log(
+            "SAVED USERNAME:",
+            pendingUsername
+          );
+
+          console.log(
+            "SAVED PASSWORD: YES"
+          );
+
+          console.log(
+            "================================"
+          );
+        } else {
+          await AsyncStorage.multiRemove([
+            REMEMBER_ME_KEY,
+            SAVED_USERNAME_KEY,
+            SAVED_PASSWORD_KEY,
+          ]);
+
+          console.log(
+            "REMEMBER ME DISABLED"
+          );
+        }
+
+        /* =================================================
+           SAVE AUTH TOKEN
+        ================================================= */
 
         await AsyncStorage.setItem(
           TOKEN_STORAGE_KEY,
           String(data.token)
         );
 
-        // ==================================================
-        // SAVE USER
-        // ==================================================
+        /* =================================================
+           SAVE USER
+        ================================================= */
 
         await AsyncStorage.setItem(
           USER_STORAGE_KEY,
-          JSON.stringify(
-            data.user
-          )
+          JSON.stringify(data.user)
         );
 
-        // ==================================================
-        // SAVE LOGIN STATUS
-        // ==================================================
+        /* =================================================
+           SAVE LOGIN STATUS
+        ================================================= */
 
         await AsyncStorage.setItem(
           LOGIN_STATUS_KEY,
           "true"
         );
 
-        // ==================================================
-        // REMOVE OLD AUTH KEYS
-        // ==================================================
+        /* =================================================
+           SECURITY VERIFICATION PENDING
+        ================================================= */
+
+        await AsyncStorage.setItem(
+          SECURITY_PENDING_KEY,
+          "true"
+        );
+
+        /* =================================================
+           REMOVE OLD AUTH KEYS
+        ================================================= */
 
         await AsyncStorage.multiRemove(
           OLD_AUTH_KEYS
         );
 
-        // ==================================================
-        // REMOVE PENDING OTP DATA
-        // ==================================================
+        /* =================================================
+           GET ROLE
+        ================================================= */
+
+        const role = String(
+          data.user?.role || ""
+        )
+          .trim()
+          .toLowerCase();
+
+        /* =================================================
+           AUTH SESSION LOG
+        ================================================= */
+
+        console.log(
+          "================================"
+        );
+
+        console.log(
+          "AUTH SESSION SAVED"
+        );
+
+        console.log(
+          "USER ID:",
+          data.user?.id ||
+            data.user?._id ||
+            "N/A"
+        );
+
+        console.log(
+          "USERNAME:",
+          data.user?.username ||
+            "N/A"
+        );
+
+        console.log(
+          "ACCOUNT TYPE:",
+          data.user?.accountType ||
+            "N/A"
+        );
+
+        console.log(
+          "USER ROLE:",
+          role
+        );
+
+        console.log(
+          "ACCOUNT STATUS:",
+          data.user?.accountStatus ||
+            "N/A"
+        );
+
+        console.log(
+          "TOKEN SAVED:",
+          true
+        );
+
+        console.log(
+          "USER SAVED:",
+          true
+        );
+
+        console.log(
+          "LOGIN STATUS:",
+          "true"
+        );
+
+        console.log(
+          "SECURITY PENDING:",
+          "true"
+        );
+
+        console.log(
+          "================================"
+        );
+
+        /* =================================================
+           REMOVE PENDING OTP DATA
+        ================================================= */
 
         await AsyncStorage.multiRemove([
           PENDING_USER_ID_KEY,
@@ -479,11 +704,14 @@ export default function OTPScreen() {
           PENDING_MASKED_EMAIL_KEY,
           PENDING_CHANNELS_KEY,
           PENDING_CONTACTS_KEY,
+          PENDING_REMEMBER_ME_KEY,
+          PENDING_USERNAME_KEY,
+          PENDING_PASSWORD_KEY,
         ]);
 
-        // ==================================================
-        // VERIFY STORAGE
-        // ==================================================
+        /* =================================================
+           VERIFY STORAGE
+        ================================================= */
 
         const savedToken =
           await AsyncStorage.getItem(
@@ -500,12 +728,27 @@ export default function OTPScreen() {
             LOGIN_STATUS_KEY
           );
 
+        const savedSecurityPending =
+          await AsyncStorage.getItem(
+            SECURITY_PENDING_KEY
+          );
+
+        const savedRememberMe =
+          await AsyncStorage.getItem(
+            REMEMBER_ME_KEY
+          );
+
+        const savedUsername =
+          await AsyncStorage.getItem(
+            SAVED_USERNAME_KEY
+          );
+
         console.log(
           "================================"
         );
 
         console.log(
-          "AUTH SESSION SAVED"
+          "FINAL AUTH STORAGE CHECK"
         );
 
         console.log(
@@ -524,33 +767,79 @@ export default function OTPScreen() {
         );
 
         console.log(
-          "GOING TO TABS"
+          "SECURITY PENDING:",
+          savedSecurityPending
+        );
+
+        console.log(
+          "REMEMBER ME:",
+          savedRememberMe
+        );
+
+        console.log(
+          "SAVED USERNAME:",
+          savedUsername
+        );
+
+        console.log(
+          "USER ROLE:",
+          role
         );
 
         console.log(
           "================================"
         );
 
-        // ==================================================
-        // NAVIGATE TO APP
-        // ==================================================
+        /* =================================================
+           CLEAR OTP FORM
+        ================================================= */
 
-        router.replace(
-          "/tabs"
+        setOtp("");
+
+        /* =================================================
+           NEXT:
+           OTP
+             ↓
+           SECURITY
+             ↓
+           FACE ID / FINGERPRINT
+             ↓
+           ROLE DASHBOARD
+        ================================================= */
+
+        console.log(
+          "================================"
         );
+
+        console.log(
+          "OTP VERIFIED"
+        );
+
+        console.log(
+          "REDIRECTING TO SECURITY VERIFICATION"
+        );
+
+        console.log(
+          "ROUTE: /security"
+        );
+
+        console.log(
+          "================================"
+        );
+
+        router.replace("/security");
 
         return;
       }
 
-      // ------------------------------------------------
-      // UNEXPECTED SUCCESS RESPONSE
-      // ------------------------------------------------
+      /* ---------------------------------------------------
+         UNEXPECTED SUCCESS RESPONSE
+      --------------------------------------------------- */
 
       Alert.alert(
         "Verification Error",
         "The server did not return a valid login session."
       );
-
     } catch (error) {
       console.error(
         "VERIFY OTP ERROR:",
@@ -561,222 +850,213 @@ export default function OTPScreen() {
         "Connection Error",
         "Unable to connect to the server. Make sure your backend is running and your phone is connected to the same network."
       );
-
     } finally {
       setLoading(false);
 
       verificationInProgress.current =
         false;
 
-      setVerifyingAutomatically(
-        false
-      );
+      setVerifyingAutomatically(false);
     }
   };
 
-  // ====================================================
-  // OTP INPUT
-  // ====================================================
+  /* =======================================================
+     OTP INPUT
+  ======================================================= */
 
-  const handleOTPChange =
-    (value: string) => {
-      const clean =
-        value
-          .replace(/\D/g, "")
-          .slice(0, 6);
+  const handleOTPChange = (
+    value: string
+  ) => {
+    const clean = value
+      .replace(/\D/g, "")
+      .slice(0, 6);
 
-      setOtp(clean);
+    setOtp(clean);
 
-      // ------------------------------------------------
-      // AUTOMATIC VERIFY
-      // ------------------------------------------------
-
-      if (
-        clean.length === 6 &&
-        !verificationInProgress.current
-      ) {
-        setVerifyingAutomatically(
-          true
-        );
-
-        setTimeout(() => {
-          verifyOTP(clean);
-        }, 150);
-      }
-    };
-
-  // ====================================================
-  // RESEND OTP
-  // ====================================================
-
-  const resendOTP =
-    async () => {
-      if (!userId) {
-        Alert.alert(
-          "Session Expired",
-          "Please login again."
-        );
-
-        return;
-      }
-
-      if (resendSeconds > 0) {
-        return;
-      }
-
-      if (resending) {
-        return;
-      }
-
-      try {
-        setResending(true);
-
-        console.log(
-          "RESENDING OTP..."
-        );
-
-        // ------------------------------------------------
-        // API
-        // ------------------------------------------------
-
-        const response =
-          await fetch(
-            `${API_URL}/auth/resend-otp`,
-            {
-              method: "POST",
-
-              headers: {
-                "Content-Type":
-                  "application/json",
-              },
-
-              body: JSON.stringify({
-                userId,
-              }),
-            }
-          );
-
-        // ------------------------------------------------
-        // RESPONSE
-        // ------------------------------------------------
-
-        let data: any = {};
-
-        try {
-          data =
-            await response.json();
-        } catch {
-          data = {};
-        }
-
-        console.log(
-          "RESEND OTP RESPONSE:",
-          data
-        );
-
-        // ------------------------------------------------
-        // ERROR
-        // ------------------------------------------------
-
-        if (!response.ok) {
-          if (
-            data.retryAfter
-          ) {
-            setResendSeconds(
-              Number(
-                data.retryAfter
-              )
-            );
-          }
-
-          Alert.alert(
-            "Unable to Resend",
-            data.message ||
-              "Please wait and try again."
-          );
-
-          return;
-        }
-
-        // ------------------------------------------------
-        // SUCCESS
-        // ------------------------------------------------
-
-        setOtp("");
-
-        setResendSeconds(
-          60
-        );
-
-        Alert.alert(
-          "OTP Sent",
-          "A new 6-digit verification code has been sent to your Gmail.",
-          [
-            {
-              text: "OK",
-
-              onPress: () => {
-                setTimeout(() => {
-                  inputRef.current?.focus();
-                }, 250);
-              },
-            },
-          ]
-        );
-
-      } catch (error) {
-        console.error(
-          "RESEND OTP ERROR:",
-          error
-        );
-
-        Alert.alert(
-          "Connection Error",
-          "Unable to connect to the server."
-        );
-
-      } finally {
-        setResending(false);
-      }
-    };
-
-  // ====================================================
-  // BACK TO LOGIN
-  // ====================================================
-
-  const goBackToLogin =
-    async () => {
-      try {
-        await AsyncStorage.multiRemove([
-          PENDING_USER_ID_KEY,
-          PENDING_EMAIL_KEY,
-          PENDING_MASKED_EMAIL_KEY,
-          PENDING_CHANNELS_KEY,
-          PENDING_CONTACTS_KEY,
-        ]);
-      } catch (error) {
-        console.error(
-          "CLEAR OTP SESSION ERROR:",
-          error
-        );
-      }
-
-      router.replace(
-        "../login"
+    /*
+     * Automatically verify when
+     * all 6 digits are entered.
+     */
+    if (
+      clean.length === 6 &&
+      !verificationInProgress.current
+    ) {
+      setVerifyingAutomatically(
+        true
       );
-    };
 
-  // ====================================================
-  // FORMAT EMAIL
-  // ====================================================
+      setTimeout(() => {
+        verifyOTP(clean);
+      }, 150);
+    }
+  };
+
+  /* =======================================================
+     RESEND OTP
+  ======================================================= */
+
+  const resendOTP = async () => {
+    if (!userId) {
+      Alert.alert(
+        "Session Expired",
+        "Please register or login again."
+      );
+
+      return;
+    }
+
+    if (resendSeconds > 0) {
+      return;
+    }
+
+    if (resending) {
+      return;
+    }
+
+    try {
+      setResending(true);
+
+      console.log(
+        "RESENDING OTP..."
+      );
+
+      /* ---------------------------------------------------
+         API
+      --------------------------------------------------- */
+
+      const response = await fetch(
+        `${API_URL}/auth/resend-otp`,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+
+            Accept:
+              "application/json",
+          },
+
+          body: JSON.stringify({
+            userId,
+          }),
+        }
+      );
+
+      /* ---------------------------------------------------
+         RESPONSE
+      --------------------------------------------------- */
+
+      let data: any = {};
+
+      try {
+        data =
+          await response.json();
+      } catch {
+        data = {};
+      }
+
+      console.log(
+        "RESEND OTP RESPONSE:",
+        data
+      );
+
+      /* ---------------------------------------------------
+         ERROR
+      --------------------------------------------------- */
+
+      if (!response.ok) {
+        if (data.retryAfter) {
+          setResendSeconds(
+            Number(data.retryAfter)
+          );
+        }
+
+        Alert.alert(
+          "Unable to Resend",
+          data.message ||
+            "Please wait and try again."
+        );
+
+        return;
+      }
+
+      /* ---------------------------------------------------
+         SUCCESS
+      --------------------------------------------------- */
+
+      setOtp("");
+
+      setResendSeconds(60);
+
+      Alert.alert(
+        "OTP Sent",
+        "A new 6-digit verification code has been sent to your Gmail.",
+        [
+          {
+            text: "OK",
+
+            onPress: () => {
+              setTimeout(() => {
+                inputRef.current?.focus();
+              }, 250);
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.error(
+        "RESEND OTP ERROR:",
+        error
+      );
+
+      Alert.alert(
+        "Connection Error",
+        "Unable to connect to the server."
+      );
+    } finally {
+      setResending(false);
+    }
+  };
+
+  /* =======================================================
+     BACK TO LOGIN
+  ======================================================= */
+
+  const goBackToLogin = async () => {
+    try {
+      await AsyncStorage.multiRemove([
+        PENDING_USER_ID_KEY,
+        PENDING_EMAIL_KEY,
+        PENDING_MASKED_EMAIL_KEY,
+        PENDING_CHANNELS_KEY,
+        PENDING_CONTACTS_KEY,
+        PENDING_REMEMBER_ME_KEY,
+        PENDING_USERNAME_KEY,
+        PENDING_PASSWORD_KEY,
+        SECURITY_PENDING_KEY,
+      ]);
+    } catch (error) {
+      console.error(
+        "CLEAR OTP SESSION ERROR:",
+        error
+      );
+    }
+
+    router.replace("../login");
+  };
+
+  /* =======================================================
+     DISPLAY EMAIL
+  ======================================================= */
 
   const displayEmail =
     email ||
     "your registered Gmail address";
 
-  // ====================================================
-  // UI
-  // ====================================================
+  /* =======================================================
+     UI
+  ======================================================= */
 
   return (
     <SafeAreaView
@@ -788,9 +1068,7 @@ export default function OTPScreen() {
       />
 
       <KeyboardAvoidingView
-        style={{
-          flex: 1,
-        }}
+        style={styles.keyboard}
         behavior={
           Platform.OS === "ios"
             ? "padding"
@@ -806,17 +1084,11 @@ export default function OTPScreen() {
             false
           }
         >
-          {/* ==========================================
-              BACK BUTTON
-          ========================================== */}
+          {/* BACK BUTTON */}
 
           <TouchableOpacity
-            style={
-              styles.backButton
-            }
-            onPress={
-              goBackToLogin
-            }
+            style={styles.backButton}
+            onPress={goBackToLogin}
             activeOpacity={0.7}
           >
             <Ionicons
@@ -826,27 +1098,19 @@ export default function OTPScreen() {
             />
 
             <Text
-              style={
-                styles.backText
-              }
+              style={styles.backText}
             >
               Back to Login
             </Text>
           </TouchableOpacity>
 
-          {/* ==========================================
-              SECURITY ICON
-          ========================================== */}
+          {/* MAIL ICON */}
 
           <View
-            style={
-              styles.iconContainer
-            }
+            style={styles.iconContainer}
           >
             <View
-              style={
-                styles.iconCircle
-              }
+              style={styles.iconCircle}
             >
               <Ionicons
                 name="mail-outline"
@@ -856,41 +1120,27 @@ export default function OTPScreen() {
             </View>
           </View>
 
-          {/* ==========================================
-              TITLE
-          ========================================== */}
+          {/* TITLE */}
 
-          <Text
-            style={
-              styles.title
-            }
-          >
+          <Text style={styles.title}>
             Check Your Gmail
           </Text>
 
           <Text
-            style={
-              styles.description
-            }
+            style={styles.description}
           >
             We sent a 6-digit verification
             code to your registered email
             address.
           </Text>
 
-          {/* ==========================================
-              EMAIL CARD
-          ========================================== */}
+          {/* EMAIL CARD */}
 
           <View
-            style={
-              styles.emailCard
-            }
+            style={styles.emailCard}
           >
             <View
-              style={
-                styles.emailIcon
-              }
+              style={styles.emailIcon}
             >
               <Ionicons
                 name="mail"
@@ -900,22 +1150,16 @@ export default function OTPScreen() {
             </View>
 
             <View
-              style={
-                styles.emailInfo
-              }
+              style={styles.emailInfo}
             >
               <Text
-                style={
-                  styles.emailLabel
-                }
+                style={styles.emailLabel}
               >
                 Verification Email
               </Text>
 
               <Text
-                style={
-                  styles.emailValue
-                }
+                style={styles.emailValue}
                 numberOfLines={1}
               >
                 {displayEmail}
@@ -929,40 +1173,30 @@ export default function OTPScreen() {
             />
           </View>
 
-          {/* ==========================================
-              OTP SECTION
-          ========================================== */}
+          {/* DIVIDER */}
 
           <View
-            style={
-              styles.divider
-            }
+            style={styles.divider}
           >
             <View
-              style={
-                styles.dividerLine
-              }
+              style={styles.dividerLine}
             />
 
             <Text
-              style={
-                styles.dividerText
-              }
+              style={styles.dividerText}
             >
               VERIFICATION CODE
             </Text>
 
             <View
-              style={
-                styles.dividerLine
-              }
+              style={styles.dividerLine}
             />
           </View>
 
+          {/* OTP */}
+
           <Text
-            style={
-              styles.otpLabel
-            }
+            style={styles.otpLabel}
           >
             Enter the 6-digit code
           </Text>
@@ -993,9 +1227,7 @@ export default function OTPScreen() {
             textContentType="oneTimeCode"
           />
 
-          {/* ==========================================
-              DIGIT INDICATOR
-          ========================================== */}
+          {/* DIGIT INDICATOR */}
 
           <View
             style={
@@ -1017,17 +1249,13 @@ export default function OTPScreen() {
             )}
           </View>
 
-          {/* ==========================================
-              VERIFY BUTTON
-          ========================================== */}
+          {/* VERIFY BUTTON */}
 
           <TouchableOpacity
             style={[
               styles.verifyButton,
-              (
-                loading ||
-                otp.length !== 6
-              ) &&
+              (loading ||
+                otp.length !== 6) &&
                 styles.disabledButton,
             ]}
             disabled={
@@ -1073,9 +1301,7 @@ export default function OTPScreen() {
             )}
           </TouchableOpacity>
 
-          {/* ==========================================
-              AUTOMATIC VERIFICATION NOTICE
-          ========================================== */}
+          {/* AUTO VERIFY */}
 
           {verifyingAutomatically && (
             <View
@@ -1098,9 +1324,7 @@ export default function OTPScreen() {
             </View>
           )}
 
-          {/* ==========================================
-              RESEND
-          ========================================== */}
+          {/* RESEND */}
 
           <View
             style={
@@ -1126,9 +1350,7 @@ export default function OTPScreen() {
               </Text>
             ) : (
               <TouchableOpacity
-                disabled={
-                  resending
-                }
+                disabled={resending}
                 onPress={
                   resendOTP
                 }
@@ -1166,19 +1388,13 @@ export default function OTPScreen() {
             )}
           </View>
 
-          {/* ==========================================
-              CHECK EMAIL NOTICE
-          ========================================== */}
+          {/* HELP */}
 
           <View
-            style={
-              styles.helpBox
-            }
+            style={styles.helpBox}
           >
             <View
-              style={
-                styles.helpIcon
-              }
+              style={styles.helpIcon}
             >
               <Ionicons
                 name="information-circle-outline"
@@ -1188,22 +1404,16 @@ export default function OTPScreen() {
             </View>
 
             <View
-              style={
-                styles.helpContent
-              }
+              style={styles.helpContent}
             >
               <Text
-                style={
-                  styles.helpTitle
-                }
+                style={styles.helpTitle}
               >
                 Can't find the email?
               </Text>
 
               <Text
-                style={
-                  styles.helpText
-                }
+                style={styles.helpText}
               >
                 Check your Spam, Junk, or
                 Promotions folder. The
@@ -1213,9 +1423,7 @@ export default function OTPScreen() {
             </View>
           </View>
 
-          {/* ==========================================
-              SECURITY NOTICE
-          ========================================== */}
+          {/* SECURITY */}
 
           <View
             style={
@@ -1243,424 +1451,292 @@ export default function OTPScreen() {
   );
 }
 
-// ======================================================
-// STYLES
-// ======================================================
+/* =========================================================
+   STYLES
+========================================================= */
 
-const styles =
-  StyleSheet.create({
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
 
-    // ==================================================
-    // SAFE AREA
-    // ==================================================
+  keyboard: {
+    flex: 1,
+  },
 
-    safeArea: {
-      flex: 1,
-      backgroundColor:
-        "#FFFFFF",
-    },
+  container: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 18,
+    paddingBottom: 40,
+  },
 
-    // ==================================================
-    // CONTAINER
-    // ==================================================
+  backButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 30,
+  },
 
-    container: {
-      flexGrow: 1,
-      paddingHorizontal: 24,
-      paddingTop: 18,
-      paddingBottom: 40,
-    },
+  backText: {
+    fontSize: 14,
+    color: "#333",
+    fontWeight: "600",
+  },
 
-    // ==================================================
-    // BACK BUTTON
-    // ==================================================
+  iconContainer: {
+    alignItems: "center",
+    marginBottom: 20,
+  },
 
-    backButton: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      gap: 8,
-      marginBottom: 30,
-    },
+  iconCircle: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    backgroundColor: "#FFF0F3",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#FFE0E6",
+  },
 
-    backText: {
-      fontSize: 14,
-      color: "#333",
-      fontWeight: "600",
-    },
+  title: {
+    textAlign: "center",
+    fontSize: 26,
+    fontWeight: "800",
+    color: "#222",
+  },
 
-    // ==================================================
-    // ICON
-    // ==================================================
+  description: {
+    textAlign: "center",
+    color: "#777",
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 8,
+    marginBottom: 24,
+  },
 
-    iconContainer: {
-      alignItems:
-        "center",
-      marginBottom: 20,
-    },
+  emailCard: {
+    minHeight: 76,
+    borderWidth: 1,
+    borderColor: "#E8E8E8",
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FAFAFA",
+  },
 
-    iconCircle: {
-      width: 86,
-      height: 86,
-      borderRadius: 43,
-      backgroundColor:
-        "#FFF0F3",
-      justifyContent:
-        "center",
-      alignItems:
-        "center",
-      borderWidth: 1,
-      borderColor:
-        "#FFE0E6",
-    },
+  emailIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: "#FFF0F3",
+    justifyContent: "center",
+    alignItems: "center",
+  },
 
-    // ==================================================
-    // TITLE
-    // ==================================================
+  emailInfo: {
+    flex: 1,
+    marginLeft: 13,
+    marginRight: 10,
+  },
 
-    title: {
-      textAlign:
-        "center",
-      fontSize: 26,
-      fontWeight:
-        "800",
-      color:
-        "#222",
-    },
+  emailLabel: {
+    fontSize: 12,
+    color: "#888",
+    fontWeight: "600",
+  },
 
-    description: {
-      textAlign:
-        "center",
-      color:
-        "#777",
-      fontSize: 14,
-      lineHeight: 21,
-      marginTop: 8,
-      marginBottom: 24,
-    },
+  emailValue: {
+    fontSize: 13,
+    color: "#222",
+    fontWeight: "800",
+    marginTop: 4,
+  },
 
-    // ==================================================
-    // EMAIL CARD
-    // ==================================================
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 25,
+  },
 
-    emailCard: {
-      minHeight: 76,
-      borderWidth: 1,
-      borderColor:
-        "#E8E8E8",
-      borderRadius: 16,
-      paddingHorizontal: 14,
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      backgroundColor:
-        "#FAFAFA",
-    },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#E8E8E8",
+  },
 
-    emailIcon: {
-      width: 46,
-      height: 46,
-      borderRadius: 14,
-      backgroundColor:
-        "#FFF0F3",
-      justifyContent:
-        "center",
-      alignItems:
-        "center",
-    },
+  dividerText: {
+    marginHorizontal: 12,
+    color: "#999",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
 
-    emailInfo: {
-      flex: 1,
-      marginLeft: 13,
-      marginRight: 10,
-    },
+  otpLabel: {
+    textAlign: "center",
+    color: "#333",
+    fontSize: 13,
+    fontWeight: "700",
+    marginBottom: 10,
+  },
 
-    emailLabel: {
-      fontSize: 12,
-      color:
-        "#888",
-      fontWeight:
-        "600",
-    },
+  otpInput: {
+    height: 64,
+    borderWidth: 1.5,
+    borderColor: "#DCDCDC",
+    borderRadius: 16,
+    backgroundColor: "#FAFAFA",
+    fontSize: 27,
+    fontWeight: "800",
+    letterSpacing: 10,
+    color: "#222",
+    paddingLeft: 10,
+  },
 
-    emailValue: {
-      fontSize: 13,
-      color:
-        "#222",
-      fontWeight:
-        "800",
-      marginTop: 4,
-    },
+  otpInputComplete: {
+    borderColor: "#C41E3A",
+    backgroundColor: "#FFF7F8",
+  },
 
-    // ==================================================
-    // DIVIDER
-    // ==================================================
+  digitContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 13,
+  },
 
-    divider: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      marginVertical: 25,
-    },
+  digitDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#DADADA",
+  },
 
-    dividerLine: {
-      flex: 1,
-      height: 1,
-      backgroundColor:
-        "#E8E8E8",
-    },
+  digitDotActive: {
+    backgroundColor: "#C41E3A",
+  },
 
-    dividerText: {
-      marginHorizontal: 12,
-      color:
-        "#999",
-      fontSize: 10,
-      fontWeight:
-        "800",
-      letterSpacing: 1,
-    },
+  verifyButton: {
+    height: 54,
+    borderRadius: 15,
+    backgroundColor: "#C41E3A",
+    justifyContent: "center",
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 9,
+    marginTop: 18,
+  },
 
-    // ==================================================
-    // OTP LABEL
-    // ==================================================
+  disabledButton: {
+    opacity: 0.5,
+  },
 
-    otpLabel: {
-      textAlign:
-        "center",
-      color:
-        "#333",
-      fontSize: 13,
-      fontWeight:
-        "700",
-      marginBottom: 10,
-    },
+  verifyText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
+  },
 
-    // ==================================================
-    // OTP INPUT
-    // ==================================================
+  autoVerifyBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 12,
+  },
 
-    otpInput: {
-      height: 64,
-      borderWidth: 1.5,
-      borderColor:
-        "#DCDCDC",
-      borderRadius: 16,
-      backgroundColor:
-        "#FAFAFA",
-      fontSize: 27,
-      fontWeight:
-        "800",
-      letterSpacing: 10,
-      color:
-        "#222",
-      paddingLeft: 10,
-    },
+  autoVerifyText: {
+    fontSize: 12,
+    color: "#777",
+    fontWeight: "600",
+  },
 
-    otpInputComplete: {
-      borderColor:
-        "#C41E3A",
-      backgroundColor:
-        "#FFF7F8",
-    },
+  resendContainer: {
+    alignItems: "center",
+    marginTop: 20,
+  },
 
-    // ==================================================
-    // DIGIT INDICATOR
-    // ==================================================
+  resendText: {
+    fontSize: 13,
+    color: "#777",
+  },
 
-    digitContainer: {
-      flexDirection:
-        "row",
-      justifyContent:
-        "center",
-      alignItems:
-        "center",
-      gap: 8,
-      marginTop: 13,
-    },
+  resendLink: {
+    color: "#C41E3A",
+    fontWeight: "800",
+    fontSize: 13,
+    marginTop: 5,
+  },
 
-    digitDot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
-      backgroundColor:
-        "#DADADA",
-    },
+  countdownText: {
+    color: "#999",
+    fontWeight: "600",
+    fontSize: 13,
+    marginTop: 5,
+  },
 
-    digitDotActive: {
-      backgroundColor:
-        "#C41E3A",
-    },
+  resendLoading: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    marginTop: 5,
+  },
 
-    // ==================================================
-    // VERIFY BUTTON
-    // ==================================================
+  helpBox: {
+    marginTop: 28,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: "#F7F7F7",
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
 
-    verifyButton: {
-      height: 54,
-      borderRadius: 15,
-      backgroundColor:
-        "#C41E3A",
-      justifyContent:
-        "center",
-      alignItems:
-        "center",
-      flexDirection:
-        "row",
-      gap: 9,
-      marginTop: 18,
-    },
+  helpIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+  },
 
-    disabledButton: {
-      opacity: 0.5,
-    },
+  helpContent: {
+    flex: 1,
+  },
 
-    verifyText: {
-      color:
-        "#FFFFFF",
-      fontSize: 15,
-      fontWeight:
-        "800",
-    },
+  helpTitle: {
+    color: "#555",
+    fontSize: 12,
+    fontWeight: "800",
+    marginBottom: 3,
+  },
 
-    // ==================================================
-    // AUTO VERIFY
-    // ==================================================
+  helpText: {
+    color: "#777",
+    fontSize: 11,
+    lineHeight: 17,
+  },
 
-    autoVerifyBox: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      gap: 8,
-      marginTop: 12,
-    },
+  securityBox: {
+    marginTop: 14,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: "#F7F7F7",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
 
-    autoVerifyText: {
-      fontSize: 12,
-      color:
-        "#777",
-      fontWeight:
-        "600",
-    },
+  securityText: {
+    color: "#777",
+    fontSize: 11,
+    flex: 1,
+  },
+});
 
-    // ==================================================
-    // RESEND
-    // ==================================================
-
-    resendContainer: {
-      alignItems:
-        "center",
-      marginTop: 20,
-    },
-
-    resendText: {
-      fontSize: 13,
-      color:
-        "#777",
-    },
-
-    resendLink: {
-      color:
-        "#C41E3A",
-      fontWeight:
-        "800",
-      fontSize: 13,
-      marginTop: 5,
-    },
-
-    countdownText: {
-      color:
-        "#999",
-      fontWeight:
-        "600",
-      fontSize: 13,
-      marginTop: 5,
-    },
-
-    resendLoading: {
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      gap: 7,
-      marginTop: 5,
-    },
-
-    // ==================================================
-    // HELP BOX
-    // ==================================================
-
-    helpBox: {
-      marginTop: 28,
-      padding: 14,
-      borderRadius: 14,
-      backgroundColor:
-        "#F7F7F7",
-      flexDirection:
-        "row",
-      alignItems:
-        "flex-start",
-      gap: 10,
-    },
-
-    helpIcon: {
-      width: 28,
-      height: 28,
-      borderRadius: 14,
-      justifyContent:
-        "center",
-      alignItems:
-        "center",
-    },
-
-    helpContent: {
-      flex: 1,
-    },
-
-    helpTitle: {
-      color:
-        "#555",
-      fontSize: 12,
-      fontWeight:
-        "800",
-      marginBottom: 3,
-    },
-
-    helpText: {
-      color:
-        "#777",
-      fontSize: 11,
-      lineHeight: 17,
-    },
-
-    // ==================================================
-    // SECURITY
-    // ==================================================
-
-    securityBox: {
-      marginTop: 14,
-      padding: 14,
-      borderRadius: 14,
-      backgroundColor:
-        "#F7F7F7",
-      flexDirection:
-        "row",
-      alignItems:
-        "center",
-      justifyContent:
-        "center",
-      gap: 8,
-    },
-
-    securityText: {
-      color:
-        "#777",
-      fontSize: 11,
-      flex: 1,
-    },
-  });

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -20,6 +20,9 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
 import { File } from "expo-file-system";
 import { router } from "expo-router";
+import { WebView } from "react-native-webview";
+import * as SecureStore from "expo-secure-store";
+import * as LocalAuthentication from "expo-local-authentication";
 
 
 // =====================================================
@@ -38,6 +41,12 @@ const ACCOUNT_TYPES: AccountType[] = [
   "Client",
   "Seller",
 ];
+
+
+
+const [biometricAvailable, setBiometricAvailable] =
+  useState(false);
+
 
 const TUP_AFFILIATIONS: TUPAffiliation[] = [
   "Student",
@@ -74,6 +83,8 @@ export default function Register() {
   // =====================================================
   // PERSONAL INFORMATION
   // =====================================================
+
+
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -160,6 +171,13 @@ export default function Register() {
   const [showConfirmPassword, setShowConfirmPassword] =
     useState(false);
 
+
+    
+// BIOMETRIC STATES
+const [biometricEnabled, setBiometricEnabled] = useState(false);
+const [biometricAvailable, setBiometricAvailable] = useState(false);
+
+
   // =====================================================
   // LOADING
   // =====================================================
@@ -168,12 +186,100 @@ export default function Register() {
   const [loadingMessage, setLoadingMessage] =
   useState("");
 
+
+const [captchaToken, setCaptchaToken] =
+  useState<string | null>(null);
+
+const [captchaVerificationToken, setCaptchaVerificationToken] =
+  useState<string | null>(null);
+
+const captchaRef = useRef<WebView>(null);
+
+
   // =====================================================
   // HELPERS
   // =====================================================
 
   const isClient = accountType === "Client";
   const isSeller = accountType === "Seller";
+
+
+  // =====================================================
+// BIOMETRIC
+// =====================================================
+
+const enableBiometric = async (): Promise<boolean> => {
+  try {
+    const hasHardware =
+      await LocalAuthentication.hasHardwareAsync();
+
+    if (!hasHardware) {
+      Alert.alert(
+        "Not Supported",
+        "This device does not support Face ID or fingerprint authentication."
+      );
+      return false;
+    }
+
+    const isEnrolled =
+      await LocalAuthentication.isEnrolledAsync();
+
+    if (!isEnrolled) {
+      Alert.alert(
+        "Biometric Not Set Up",
+        "Please set up Face ID or fingerprint on your device first."
+      );
+      return false;
+    }
+
+    const result =
+      await LocalAuthentication.authenticateAsync({
+        promptMessage: "Enable Biometric Login",
+        cancelLabel: "Cancel",
+        disableDeviceFallback: false,
+      });
+
+    return result.success;
+
+  } catch (error) {
+    console.error("BIOMETRIC ERROR:", error);
+
+    Alert.alert(
+      "Biometric Error",
+      "Unable to enable biometric authentication."
+    );
+
+    return false;
+  }
+};
+
+// =====================================================
+// CHECK BIOMETRIC AVAILABILITY
+// =====================================================
+
+useEffect(() => {
+  const checkBiometricAvailability = async () => {
+    try {
+      const hasHardware =
+        await LocalAuthentication.hasHardwareAsync();
+
+      const isEnrolled =
+        await LocalAuthentication.isEnrolledAsync();
+
+      setBiometricAvailable(
+        hasHardware && isEnrolled
+      );
+    } catch (error) {
+      console.error("BIOMETRIC CHECK ERROR:", error);
+      setBiometricAvailable(false);
+    }
+  };
+
+  checkBiometricAvailability();
+});
+
+
+
 
   const isStudent =
     isClient && tupAffiliation === "Student";
@@ -275,18 +381,18 @@ export default function Register() {
   // DATE PICKER
   // =====================================================
 
-  const handleDateChange = (
-    _event: any,
-    selectedDate?: Date
-  ) => {
-    if (selectedDate) {
-      setBirthday(selectedDate);
-    }
+const handleDateChange = (
+  _event: any,
+  selectedDate?: Date
+) => {
+  if (selectedDate) {
+    setBirthday(selectedDate);
+  }
 
-    if (Platform.OS !== "ios") {
-      setShowDatePicker(false);
-    }
-  };
+  if (Platform.OS !== "ios") {
+    setShowDatePicker(false);
+  }
+};
 
   // =====================================================
   // TAKE PHOTO
@@ -315,7 +421,7 @@ export default function Register() {
         await ImagePicker.launchCameraAsync({
           mediaTypes: ["images"],
           allowsEditing: false,
-          quality: 0.8,
+          quality: 1,
         });
 
       if (
@@ -379,7 +485,7 @@ export default function Register() {
         await ImagePicker.launchImageLibraryAsync({
           mediaTypes: ["images"],
           allowsEditing: false,
-          quality: 0.8,
+          quality: 1,
         });
 
       if (
@@ -432,15 +538,15 @@ export default function Register() {
 
     switch (type) {
       case "tupFront":
-        title = "TUP ID - Front";
+        title = "TUPC ID - Front";
         description =
-          "Take or select a clear photo of the FRONT of your TUP ID.";
+          "Take or select a clear photo of the FRONT of your TUPC ID.";
         break;
 
       case "tupBack":
-        title = "TUP ID - Back";
+        title = "TUPC ID - Back";
         description =
-          "Take or select a clear photo of the BACK of your TUP ID.";
+          "Take or select a clear photo of the BACK of your TUPC ID.";
         break;
 
       case "governmentFront":
@@ -539,8 +645,8 @@ export default function Register() {
     if (isClient) {
       if (!tupAffiliation) {
         Alert.alert(
-          "TUP Affiliation Required",
-          "Please select your TUP affiliation."
+          "TUPC Affiliation Required",
+          "Please select your TUPC affiliation."
         );
         return false;
       }
@@ -568,17 +674,27 @@ if (!email.includes("@")) {
   return false;
 }
 
-        if (!tupIdNumber.trim()) {
-          Alert.alert(
-            "TUP ID Number Required",
-            "Please enter your TUP ID number."
-          );
-          return false;
-        }
+const tupIdPattern = /^TUPC-\d{2}-\d{4}$/i;
+
+if (!tupIdNumber.trim()) {
+  Alert.alert(
+    "TUPC ID Required",
+    "Please enter your TUPC ID number."
+  );
+  return false;
+}
+
+if (!tupIdPattern.test(tupIdNumber.trim())) {
+  Alert.alert(
+    "Invalid TUPC ID",
+    "Please enter your TUPC ID like TUPC-24-0498."
+  );
+  return false;
+}
 
         if (!tupIdFrontPhoto) {
           Alert.alert(
-            "TUP ID Front Required",
+            "TUPC ID Front Required",
             "Please provide a clear photo of the FRONT of your TUP ID."
           );
           return false;
@@ -586,7 +702,7 @@ if (!email.includes("@")) {
 
         if (!tupIdBackPhoto) {
           Alert.alert(
-            "TUP ID Back Required",
+            "TUPC ID Back Required",
             "Please provide a clear photo of the BACK of your TUP ID."
           );
           return false;
@@ -735,13 +851,19 @@ if (!email.includes("@")) {
       return false;
     }
 
-    if (password.length < 8) {
-      Alert.alert(
-        "Weak Password",
-        "Password must contain at least 8 characters."
-      );
-      return false;
-    }
+if (
+  password.length < 8 ||
+  !/[A-Z]/.test(password) ||
+  !/[a-z]/.test(password) ||
+  !/\d/.test(password) ||
+  !/[^A-Za-z0-9]/.test(password)
+) {
+  Alert.alert(
+    "Weak Password",
+    "Password must contain at least 8 characters, including an uppercase letter, lowercase letter, number, and special character."
+  );
+  return false;
+}
 
     if (password !== confirmPassword) {
       Alert.alert(
@@ -753,6 +875,27 @@ if (!email.includes("@")) {
 
     return true;
   };
+
+  const passwordChecks = {
+  length: password.length >= 8,
+  uppercase: /[A-Z]/.test(password),
+  lowercase: /[a-z]/.test(password),
+  number: /\d/.test(password),
+  special: /[^A-Za-z0-9]/.test(password),
+};
+
+const passwordScore = Object.values(passwordChecks).filter(Boolean).length;
+
+const passwordStrength =
+  passwordScore <= 1
+    ? "Weak"
+    : passwordScore === 2
+    ? "Fair"
+    : passwordScore === 3 || passwordScore === 4
+    ? "Good"
+    : "Strong";
+
+const passwordStrengthWidth = `${(passwordScore / 5) * 100}%`;
 
   // =====================================================
   // REGISTER TO MONGODB
@@ -769,10 +912,12 @@ if (!email.includes("@")) {
 
 try {
   setLoading(true);
-  setLoadingMessage(
-  isClient && !isStudent
-    ? "VERIFYING ID..."
-    : "CREATING ACCOUNT..."
+setLoadingMessage(
+  isStudent
+    ? "VERIFYING STUDENT ID..."
+    : isClient && !isStudent
+      ? "VERIFYING ID..."
+      : "CREATING ACCOUNT..."
 );
 
   // =================================================
@@ -970,6 +1115,205 @@ verificationFormData.append(
   }
 
   // =================================================
+// AUTOMATIC STUDENT ID VERIFICATION
+// STUDENT CLIENT ONLY
+// =================================================
+
+if (isStudent) {
+  console.log("=================================");
+  console.log("STARTING STUDENT ID VERIFICATION");
+  console.log("=================================");
+
+  const verificationFormData = new FormData();
+
+  // -----------------------------------------------
+  // STUDENT INFORMATION
+  // -----------------------------------------------
+
+  verificationFormData.append(
+    "firstName",
+    firstName.trim()
+  );
+
+  verificationFormData.append(
+    "lastName",
+    lastName.trim()
+  );
+
+  verificationFormData.append(
+    "tupIdNumber",
+    tupIdNumber.trim()
+  );
+
+  // -----------------------------------------------
+  // TUP ID FRONT
+  // -----------------------------------------------
+
+  if (!tupIdFrontPhoto) {
+    throw new Error(
+      "TUP ID front photo is missing."
+    );
+  }
+
+  const tupFrontFile =
+    new File(tupIdFrontPhoto);
+
+  if (!tupFrontFile.exists) {
+    throw new Error(
+      "TUPC ID front photo file does not exist."
+    );
+  }
+
+  verificationFormData.append(
+    "tupIdFront",
+    tupFrontFile as any
+  );
+
+  // -----------------------------------------------
+  // TUP ID BACK
+  // -----------------------------------------------
+
+  if (!tupIdBackPhoto) {
+    throw new Error(
+      "TUPC ID back photo is missing."
+    );
+  }
+
+  const tupBackFile =
+    new File(tupIdBackPhoto);
+
+  if (!tupBackFile.exists) {
+    throw new Error(
+      "TUPC ID back photo file does not exist."
+    );
+  }
+
+  verificationFormData.append(
+    "tupIdBack",
+    tupBackFile as any
+  );
+
+  console.log(
+    "Verifying Student TUPC ID..."
+  );
+
+  // -----------------------------------------------
+  // SEND TO BACKEND
+  // -----------------------------------------------
+
+  const verificationResponse = await fetch(
+    `${API_URL}/api/verify-student-id`,
+    {
+      method: "POST",
+      body: verificationFormData,
+    }
+  );
+
+  let verificationData: any = null;
+
+  try {
+    verificationData =
+      await verificationResponse.json();
+  } catch {
+    verificationData = null;
+  }
+
+  console.log(
+    "Student ID verification status:",
+    verificationResponse.status
+  );
+
+  console.log(
+    "Student ID verification response:",
+    verificationData
+  );
+
+  // -----------------------------------------------
+  // VERIFICATION ERROR
+  // -----------------------------------------------
+
+  if (!verificationResponse.ok) {
+    throw new Error(
+      verificationData?.message ||
+        "Student ID verification failed."
+    );
+  }
+
+  // -----------------------------------------------
+  // 3-WAY AUTHENTICATION
+  // -----------------------------------------------
+
+  const firstNameMatch =
+    verificationData?.matches?.firstName === true;
+
+  const lastNameMatch =
+    verificationData?.matches?.lastName === true;
+
+  const idNumberMatch =
+    verificationData?.matches?.idNumber === true;
+
+  console.log("=================================");
+  console.log("STUDENT ID AUTHENTICATION RESULT");
+  console.log("=================================");
+
+  console.log(
+    "First Name:",
+    firstNameMatch ? "MATCH" : "NO MATCH"
+  );
+
+  console.log(
+    "Last Name:",
+    lastNameMatch ? "MATCH" : "NO MATCH"
+  );
+
+  console.log(
+    "TUPC ID Number:",
+    idNumberMatch ? "MATCH" : "NO MATCH"
+  );
+
+  console.log("=================================");
+
+  // -----------------------------------------------
+  // MUST BE 3/3
+  // -----------------------------------------------
+
+  if (
+    !firstNameMatch ||
+    !lastNameMatch ||
+    !idNumberMatch
+  ) {
+    const failedChecks: string[] = [];
+
+    if (!firstNameMatch) {
+      failedChecks.push("First Name");
+    }
+
+    if (!lastNameMatch) {
+      failedChecks.push("Last Name");
+    }
+
+    if (!idNumberMatch) {
+      failedChecks.push("TUPC ID Number");
+    }
+
+    throw new Error(
+      `Student ID verification failed.\n\n` +
+      `The following information did not match your TUPC ID:\n` +
+      `• ${failedChecks.join("\n• ")}\n\n` +
+      `Please make sure your information matches the details shown on your TUPC ID.`
+    );
+  }
+
+  // -----------------------------------------------
+  // SUCCESS — 3/3
+  // -----------------------------------------------
+
+  console.log(
+    "Student TUP ID verification PASSED: 3/3"
+  );
+}
+
+  // =================================================
   // CREATE REGISTRATION FORM DATA
   // =================================================
 
@@ -979,6 +1323,30 @@ verificationFormData.append(
   );
 
   const formData = new FormData();
+
+// =================================================
+// CAPTCHA TOKEN
+// =================================================
+
+if (!captchaToken) {
+  Alert.alert(
+    "CAPTCHA Required",
+    "Please complete the CAPTCHA verification before registering."
+  );
+  setLoading(false);
+  return;
+}
+
+formData.append(
+  "captchaVerificationToken",
+  captchaVerificationToken || ""
+);
+
+console.log(
+  "CAPTCHA VERIFICATION TOKEN ADDED TO FORM DATA:",
+  captchaVerificationToken
+);
+
 
       // =================================================
       // PERSONAL INFORMATION
@@ -1139,17 +1507,17 @@ verificationFormData.append(
 
         if (!tupFrontFile.exists) {
           throw new Error(
-            "TUP ID front photo file does not exist."
+            "TUPC ID front photo file does not exist."
           );
         }
 
         console.log(
-          "TUP ID FRONT:",
+          "TUPC ID FRONT:",
           tupFrontFile.name
         );
 
         formData.append(
-          "tupIdFrontPhoto",
+          "tupIdFront",
           tupFrontFile as any
         );
 
@@ -1178,7 +1546,7 @@ verificationFormData.append(
         );
 
         formData.append(
-          "tupIdBackPhoto",
+          "tupIdBack",
           tupBackFile as any
         );
       } else {
@@ -1294,37 +1662,35 @@ verificationFormData.append(
         );
       }
 
-      // =================================================
-      // SUCCESS
-      // =================================================
 
-      if (isSeller) {
-        Alert.alert(
-          "Seller Application Submitted",
-          "Your seller account has been created and is now pending admin review. You can start selling once your seller account is approved.",
-          [
-            {
-              text: "Continue to Login",
-              onPress: () => {
-                router.replace("../login");
-              },
-            },
-          ]
-        );
-      } else {
-        Alert.alert(
-          "Account Created",
-          "Your client account has been created successfully. You can now continue to login.",
-          [
-            {
-              text: "Continue to Login",
-              onPress: () => {
-                router.replace("../login");
-              },
-            },
-          ]
-        );
-      }
+// =================================================
+// SUCCESS → OTP PAGE
+// =================================================
+
+const otpEmail =
+  isStudent
+    ? gsfeEmail.trim().toLowerCase()
+    : gmailEmail.trim().toLowerCase();
+
+Alert.alert(
+  isSeller
+    ? "Seller Application Submitted"
+    : "Account Created",
+  "Your account has been created successfully. Please check your email for the OTP.",
+  [
+    {
+      text: "Continue",
+      onPress: () => {
+        router.replace({
+          pathname: "../otp",
+          params: {
+            email: otpEmail,
+          },
+        });
+      },
+    },
+  ]
+);
 
       // =================================================
       // CLEAR FORM
@@ -1463,17 +1829,17 @@ verificationFormData.append(
                 <Text
                   style={styles.headerSubtitle}
                 >
-                  TUP-OrderUp
+                  TUPC-OrderUp
                 </Text>
               </View>
 
-              <View style={styles.headerIcon}>
-                <Ionicons
-                  name="bag-handle"
-                  size={25}
-                  color="#FFFFFF"
-                />
-              </View>
+<View style={styles.headerIcon}>
+  <Image
+    source={require("../../assets/main-image/logo.png")}
+    style={styles.headerLogo}
+    resizeMode="contain"
+  />
+</View>
             </View>
 
             <View
@@ -1504,7 +1870,7 @@ verificationFormData.append(
               </Text>
 
               <Text style={styles.introText}>
-                Create your TUP-OrderUp account
+                Create your TUPC-OrderUp account
                 by choosing the account type
                 that best fits your needs.
               </Text>
@@ -1534,7 +1900,7 @@ verificationFormData.append(
               }
             >
               Choose how you will use
-              TUP-OrderUp.
+              TUPC-OrderUp.
             </Text>
 
             <View
@@ -1716,23 +2082,23 @@ verificationFormData.append(
             </TouchableOpacity>
 
             {showDatePicker && (
-              <DateTimePicker
-                value={
-                  birthday ||
-                  new Date(2000, 0, 1)
-                }
-                mode="date"
-                display={
-                  Platform.OS === "ios"
-                    ? "spinner"
-                    : "default"
-                }
-                maximumDate={new Date()}
-                onChange={handleDateChange}
-                onDismiss={() =>
-                  setShowDatePicker(false)
-                }
-              />
+<DateTimePicker
+  value={
+    birthday ||
+    new Date(2000, 0, 1)
+  }
+  mode="date"
+  display={
+    Platform.OS === "ios"
+      ? "spinner"
+      : "default"
+  }
+  maximumDate={new Date()}
+  onValueChange={handleDateChange}
+  onDismiss={() =>
+    setShowDatePicker(false)
+  }
+/>
             )}
           </View>
 
@@ -1744,12 +2110,12 @@ verificationFormData.append(
             <View style={styles.section}>
               <SectionHeader
                 number="02"
-                title="TUP Affiliation"
-                subtitle="Tell us how you are connected to TUP"
+                title="TUPC Affiliation"
+                subtitle="Tell us how you are connected to TUPC"
               />
 
               <Text style={styles.label}>
-                TUP AFFILIATION *
+                TUPC AFFILIATION *
               </Text>
 
               <TouchableOpacity
@@ -1904,7 +2270,7 @@ verificationFormData.append(
                       >
                         Students must provide
                         their GSFE/Gmail account
-                        and TUP ID for
+                        and TUPC ID for
                         verification.
                       </Text>
                     </View>
@@ -1921,8 +2287,8 @@ verificationFormData.append(
                   />
 
                   <InputField
-                    label="TUP ID NUMBER *"
-                    placeholder="Enter your TUP ID number"
+                    label="TUPC ID NUMBER *"
+                    placeholder="TUPC-XX-XXXX"
                     value={tupIdNumber}
                     onChangeText={setTupIdNumber}
                     icon="card-outline"
@@ -1932,13 +2298,13 @@ verificationFormData.append(
                   {/* TUP ID FRONT */}
 
                   <Text style={styles.label}>
-                    TUP ID FRONT *
+                    TUPC ID FRONT *
                   </Text>
 
                   <PhotoPicker
                     photo={tupIdFrontPhoto}
                     title="Take a Photo of the Front"
-                    buttonText="ADD TUP ID FRONT"
+                    buttonText="ADD TUPC ID FRONT"
                     onPress={() =>
                       handlePhoto("tupFront")
                     }
@@ -1974,7 +2340,7 @@ verificationFormData.append(
                       }
                     >
                       Both the FRONT and BACK of
-                      your TUP ID are required.
+                      your TUPC ID are required.
                       Make sure all details are
                       clear, readable, and
                       completely visible.
@@ -2275,7 +2641,7 @@ verificationFormData.append(
                         styles.sellerIntroTitle
                       }
                     >
-                      Become a TUP-OrderUp
+                      Become a TUPC-OrderUp
                       Seller
                     </Text>
 
@@ -2285,7 +2651,7 @@ verificationFormData.append(
                       }
                     >
                       Create your shop and
-                      sell products to the TUP
+                      sell products to the TUPC
                       community. Your seller
                       application will be
                       reviewed by an
@@ -2609,7 +2975,7 @@ verificationFormData.append(
 
               <TextInput
                 style={styles.input}
-                placeholder="At least 8 characters"
+                placeholder="Create a strong password"
                 placeholderTextColor="#A0A0A0"
                 value={password}
                 onChangeText={setPassword}
@@ -2638,6 +3004,114 @@ verificationFormData.append(
                 />
               </TouchableOpacity>
             </View>
+
+
+{/* PASSWORD STRENGTH */}
+
+{password.length > 0 && (
+  <View style={styles.passwordStrengthContainer}>
+
+    <View style={styles.passwordStrengthHeader}>
+      <Text style={styles.passwordStrengthLabel}>
+        Password Strength
+      </Text>
+
+      <Text
+        style={[
+          styles.passwordStrengthText,
+          passwordStrength === "Weak" &&
+            styles.passwordWeak,
+          passwordStrength === "Fair" &&
+            styles.passwordFair,
+          passwordStrength === "Good" &&
+            styles.passwordGood,
+          passwordStrength === "Strong" &&
+            styles.passwordStrong,
+        ]}
+      >
+        {passwordStrength}
+      </Text>
+    </View>
+
+    {/* STRENGTH BAR */}
+
+    <View style={styles.passwordBarBackground}>
+      <View
+        style={[
+          styles.passwordBarFill,
+          {
+            width: passwordStrengthWidth as `${number}%`,
+          },
+          passwordStrength === "Weak" &&
+            styles.barWeak,
+          passwordStrength === "Fair" &&
+            styles.barFair,
+          passwordStrength === "Good" &&
+            styles.barGood,
+          passwordStrength === "Strong" &&
+            styles.barStrong,
+        ]}
+      />
+    </View>
+
+    {/* REQUIREMENTS */}
+
+    <View style={styles.passwordRequirements}>
+
+      <Text
+        style={[
+          styles.passwordRequirement,
+          passwordChecks.length &&
+            styles.requirementPassed,
+        ]}
+      >
+        {passwordChecks.length ? "✓" : "○"} At least 8 characters
+      </Text>
+
+      <Text
+        style={[
+          styles.passwordRequirement,
+          passwordChecks.uppercase &&
+            styles.requirementPassed,
+        ]}
+      >
+        {passwordChecks.uppercase ? "✓" : "○"} One uppercase letter
+      </Text>
+
+      <Text
+        style={[
+          styles.passwordRequirement,
+          passwordChecks.lowercase &&
+            styles.requirementPassed,
+        ]}
+      >
+        {passwordChecks.lowercase ? "✓" : "○"} One lowercase letter
+      </Text>
+
+      <Text
+        style={[
+          styles.passwordRequirement,
+          passwordChecks.number &&
+            styles.requirementPassed,
+        ]}
+      >
+        {passwordChecks.number ? "✓" : "○"} One number
+      </Text>
+
+      <Text
+        style={[
+          styles.passwordRequirement,
+          passwordChecks.special &&
+            styles.requirementPassed,
+        ]}
+      >
+        {passwordChecks.special ? "✓" : "○"} One special character
+      </Text>
+
+    </View>
+  </View>
+)}
+
 
             {/* CONFIRM PASSWORD */}
 
@@ -2708,6 +3182,77 @@ verificationFormData.append(
               </Text>
             </View>
           </View>
+
+
+{/* =====================================================
+    BIOMETRIC SETUP
+===================================================== */}
+
+{biometricAvailable && (
+  <View style={styles.biometricBox}>
+
+    <View style={styles.biometricTopRow}>
+      <View style={styles.biometricIconCircle}>
+        <Ionicons
+          name="finger-print-outline"
+          size={30}
+          color="#C41E3A"
+        />
+      </View>
+
+      <View style={styles.biometricHeaderText}>
+        <Text style={styles.biometricTitle}>
+          Biometric Login
+        </Text>
+
+        <Text style={styles.biometricSubtitle}>
+          Sign in faster using Face ID or fingerprint.
+        </Text>
+      </View>
+    </View>
+
+    <View style={styles.biometricDivider} />
+
+    <TouchableOpacity
+      activeOpacity={0.85}
+      style={[
+        styles.biometricButton,
+        biometricEnabled && styles.biometricButtonEnabled,
+      ]}
+      onPress={async () => {
+        const success = await enableBiometric();
+
+        if (success) {
+          setBiometricEnabled(true);
+
+          Alert.alert(
+            "Biometric Ready",
+            "Your biometric authentication is ready to use when logging in."
+          );
+        }
+      }}
+    >
+      <Ionicons
+        name={
+          biometricEnabled
+            ? "checkmark-circle"
+            : "finger-print-outline"
+        }
+        size={20}
+        color="#FFFFFF"
+      />
+
+      <Text style={styles.biometricButtonText}>
+        {biometricEnabled
+          ? "Biometric Ready"
+          : "Set Up Biometric Login"}
+      </Text>
+    </TouchableOpacity>
+
+  </View>
+)}
+
+
 
           {/* ================================================= */}
           {/* SELLER FINAL NOTICE */}
@@ -2799,9 +3344,109 @@ verificationFormData.append(
             </View>
           )}
 
+<WebView 
+  ref={captchaRef} 
+  originWhitelist={["*"]} 
+  source={{ 
+    uri:"http://192.168.18.24:5001/captcha",
+  }} 
+  javaScriptEnabled={true} 
+  domStorageEnabled={true} 
+  thirdPartyCookiesEnabled={true} 
+  sharedCookiesEnabled={true} 
+  mixedContentMode="always" 
+  allowsInlineMediaPlayback={true}
+
+  onMessage={(event) => {
+    try {
+      const data = JSON.parse(
+        event.nativeEvent.data
+      );
+
+if (data.type === "CAPTCHA_SUCCESS") {
+  console.log(
+    "✅ CAPTCHA TOKEN:",
+    data.token
+  );
+
+  setCaptchaToken(data.token);
+
+  fetch("http://192.168.18.24:5001/api/verify", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      token: data.token,
+    }),
+  })
+    .then(async (response) => {
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.message || "CAPTCHA verification failed."
+        );
+      }
+
+      console.log(
+        "✅ CAPTCHA VERIFICATION TOKEN RECEIVED"
+      );
+
+      setCaptchaVerificationToken(
+        result.verificationToken
+      );
+    })
+    .catch((error) => {
+      console.error(
+        "❌ CAPTCHA SERVER ERROR:",
+        error
+      );
+
+      setCaptchaVerificationToken(null);
+    });
+}
+
+      if (data.type === "CAPTCHA_ERROR") {
+        console.log(
+          "❌ CAPTCHA ERROR:",
+          data.error
+        );
+      }
+    } catch (error) {
+      console.error(
+        "CAPTCHA message error:",
+        error
+      );
+    }
+  }}
+
+  onError={(event) => { 
+    console.log(
+      "WEBVIEW ERROR:",
+      event.nativeEvent
+    ); 
+  }} 
+
+  onHttpError={(event) => { 
+    console.log(
+      "WEBVIEW HTTP ERROR:",
+      event.nativeEvent
+    ); 
+  }} 
+
+  style={{ 
+    width: "100%", 
+    height: 100, 
+    backgroundColor: "transparent", 
+  }} 
+/>
+
+
           {/* ================================================= */}
           {/* REGISTER BUTTON */}
           {/* ================================================= */}
+
 
           <TouchableOpacity
             style={[
@@ -2874,7 +3519,7 @@ verificationFormData.append(
           {/* ================================================= */}
 
           <Text style={styles.footer}>
-            TUP-OrderUp
+            TUPC-OrderUp
           </Text>
 
           <Text style={styles.footerSub}>
@@ -2985,6 +3630,7 @@ function InputField({
           autoCapitalize={autoCapitalize}
           maxLength={maxLength}
         />
+
       </View>
     </>
   );
@@ -3102,6 +3748,8 @@ function PhotoPicker({
 // STYLES
 // =====================================================
 
+
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -3113,14 +3761,24 @@ const styles = StyleSheet.create({
     paddingBottom: 45,
   },
 
+headerIcon: {
+  width: 48,
+  height: 48,
+  justifyContent: "center",
+  alignItems: "center",
+},
 
+headerLogo: {
+  width: 42,
+  height: 42,
+},
 
   // ===================================================
   // HEADER
   // ===================================================
 
   cardinalHeader: {
-    backgroundColor: "#8F1029",
+    backgroundColor: "#430812",
     paddingTop: 18,
     paddingHorizontal: 20,
     paddingBottom: 20,
@@ -3158,14 +3816,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  headerIcon: {
-    width: 43,
-    height: 43,
-    borderRadius: 13,
-    backgroundColor: "#C41E3A",
-    alignItems: "center",
-    justifyContent: "center",
-  },
 
   headerAccent: {
     height: 3,
@@ -3175,6 +3825,89 @@ const styles = StyleSheet.create({
     marginTop: 18,
     opacity: 0.9,
   },
+
+
+// =====================================================
+// BIOMETRIC LOGIN
+// =====================================================
+
+biometricBox: {
+  backgroundColor: "#FFFFFF",
+  marginHorizontal: 16,
+  marginTop: 16,
+  marginBottom: 16,
+  padding: 18,
+  borderRadius: 18,
+  borderWidth: 1,
+  borderColor: "#EAEAEA",
+
+  shadowColor: "#000",
+  shadowOffset: {
+    width: 0,
+    height: 3,
+  },
+  shadowOpacity: 0.04,
+  shadowRadius: 10,
+  elevation: 2,
+},
+
+biometricTopRow: {
+  flexDirection: "row",
+  alignItems: "center",
+},
+
+biometricIconCircle: {
+  width: 52,
+  height: 52,
+  borderRadius: 26,
+  backgroundColor: "#FFF3F5",
+  justifyContent: "center",
+  alignItems: "center",
+},
+
+biometricHeaderText: {
+  flex: 1,
+  marginLeft: 12,
+},
+
+biometricTitle: {
+  fontSize: 16,
+  fontWeight: "700",
+  color: "#1A1A1A",
+},
+
+biometricSubtitle: {
+  marginTop: 4,
+  fontSize: 12,
+  lineHeight: 18,
+  color: "#777777",
+},
+
+biometricDivider: {
+  height: 1,
+  backgroundColor: "#EEEEEE",
+  marginVertical: 16,
+},
+
+biometricButton: {
+  height: 48,
+  borderRadius: 12,
+  backgroundColor: "#C41E3A",
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 8,
+},
+
+biometricButtonEnabled: {
+  backgroundColor: "#2E7D32",
+},
+
+biometricButtonText: {
+  color: "#FFFFFF",
+  fontSize: 14,
+  fontWeight: "700",
+},
 
   // ===================================================
   // INTRO
@@ -3755,11 +4488,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
 
-  idPreview: {
-    width: "100%",
-    height: 245,
-    resizeMode: "cover",
-  },
+idPreview: {
+  width: "100%",
+  height: 245,
+},
 
   photoOverlay: {
     position: "absolute",
@@ -3814,6 +4546,89 @@ const styles = StyleSheet.create({
     marginTop: -5,
   },
 
+  passwordStrengthContainer: {
+  marginTop: -8,
+  marginBottom: 16,
+},
+
+passwordStrengthHeader: {
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: 7,
+},
+
+passwordStrengthLabel: {
+  fontSize: 11,
+  fontWeight: "700",
+  color: "#666666",
+},
+
+passwordStrengthText: {
+  fontSize: 11,
+  fontWeight: "900",
+},
+
+passwordWeak: {
+  color: "#D32F2F",
+},
+
+passwordFair: {
+  color: "#F57C00",
+},
+
+passwordGood: {
+  color: "#1976D2",
+},
+
+passwordStrong: {
+  color: "#2E7D32",
+},
+
+passwordBarBackground: {
+  width: "100%",
+  height: 6,
+  backgroundColor: "#E6E6E6",
+  borderRadius: 10,
+  overflow: "hidden",
+},
+
+passwordBarFill: {
+  height: "100%",
+  borderRadius: 10,
+},
+
+barWeak: {
+  backgroundColor: "#D32F2F",
+},
+
+barFair: {
+  backgroundColor: "#F57C00",
+},
+
+barGood: {
+  backgroundColor: "#1976D2",
+},
+
+barStrong: {
+  backgroundColor: "#2E7D32",
+},
+
+passwordRequirements: {
+  marginTop: 9,
+  gap: 3,
+},
+
+passwordRequirement: {
+  fontSize: 10.5,
+  color: "#999999",
+},
+
+requirementPassed: {
+  color: "#2E7D32",
+  fontWeight: "700",
+},
+
   passwordHintText: {
     color: "#888888",
     fontSize: 10.5,
@@ -3829,12 +4644,12 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 22,
     borderRadius: 15,
-    backgroundColor: "#C41E3A",
+    backgroundColor: "#7D1021",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
-    shadowColor: "#C41E3A",
+    shadowColor: "#7D1021",
     shadowOffset: {
       width: 0,
       height: 6,
