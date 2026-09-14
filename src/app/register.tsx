@@ -68,7 +68,7 @@ const GOVERNMENT_IDS = [
 
 const API_URL =
   process.env.EXPO_PUBLIC_API_URL ||
-  "http://192.168.18.24:5000";
+  "https://groove-blend-charity.ngrok-free.dev";
 
 // =====================================================
 // REGISTER SCREEN

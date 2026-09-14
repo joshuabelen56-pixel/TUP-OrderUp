@@ -26,7 +26,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const BASE_URL = (
   process.env.EXPO_PUBLIC_API_URL ||
-  "http://192.168.18.24:5000"
+  "https://groove-blend-charity.ngrok-free.dev"
 ).replace(/\/+$/, "");
 
 const API_URL = BASE_URL.endsWith("/api")

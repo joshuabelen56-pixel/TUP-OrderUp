@@ -1,3 +1,6 @@
+import dns from 'node:dns';
+dns.setDefaultResultOrder('ipv4first');
+dns.setServers(['8.8.8.8', '1.1.1.1']);
 import express, {
   Request,
   Response,
@@ -6,6 +9,7 @@ import express, {
 
 import sharp from "sharp";
 import cors from "cors";
+import axios from "axios";
 
 
 import {
@@ -53,13 +57,22 @@ app.use(
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME;
 
-const PORT = Number(process.env.PORT) || 5001;
+const PORT = Number(process.env.PORT) || 5000;
 
 const JWT_SECRET =
   process.env.JWT_SECRET || "CHANGE_THIS_JWT_SECRET";
 
 const GMAIL_USER = process.env.GMAIL_USER;
 const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
+
+const TURNSTILE_SITE_KEY = process.env.TURNSTILE_SITE_KEY || "";
+const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY || "";
+
+if (!TURNSTILE_SITE_KEY || !TURNSTILE_SECRET_KEY) {
+  console.error(
+    "WARNING: TURNSTILE_SITE_KEY or TURNSTILE_SECRET_KEY is missing from .env"
+  );
+}
 
 // =====================================================
 // ENV VALIDATION
@@ -767,13 +780,7 @@ app.get(
 );
 
 // =====================================================
-// TURNSTILE CAPTCHA PAGE
-// =====================================================
-//
-// IMPORTANT: this route MUST be registered before the
-// 404 catch-all handler below, otherwise Express will
-// always answer with 404 for any request to /captcha.
-//
+// TURNSTILE CAPTCHA
 // =====================================================
 
 const CAPTCHA_JWT_SECRET =
@@ -795,6 +802,158 @@ function verifyCaptchaVerificationToken(
     return false;
   }
 }
+
+async function verifyTurnstile(token: string, ip?: string) {
+  try {
+    const response = await axios.post(
+      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+      new URLSearchParams({
+        secret: TURNSTILE_SECRET_KEY,
+        response: token,
+        ...(ip ? { remoteip: ip } : {}),
+      }),
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      }
+    );
+
+    return response.data;
+  } catch (error) {
+    console.error("Turnstile verification error:", error);
+    return { success: false };
+  }
+}
+
+// -----------------------------------------------------
+// SERVE THE CAPTCHA PAGE
+// IMPORTANT: this route MUST be registered before the
+// 404 catch-all handler below, otherwise Express will
+// always answer with 404 for any request to /captcha.
+// -----------------------------------------------------
+
+app.get("/captcha", (req: Request, res: Response) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+        <style>
+          html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #ffffff;
+          }
+        </style>
+      </head>
+      <body>
+        <div
+          class="cf-turnstile"
+          data-sitekey="${TURNSTILE_SITE_KEY}"
+          data-callback="onTurnstileSuccess"
+          data-error-callback="onTurnstileError"
+        ></div>
+
+        <script>
+          async function onTurnstileSuccess(token) {
+            try {
+              const res = await fetch("/api/captcha/verify", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ token }),
+              });
+
+              const data = await res.json();
+
+              if (data.verified && data.captchaVerificationToken) {
+                window.ReactNativeWebView?.postMessage(
+                  JSON.stringify({
+                    success: true,
+                    captchaVerificationToken: data.captchaVerificationToken,
+                  })
+                );
+              } else {
+                window.ReactNativeWebView?.postMessage(
+                  JSON.stringify({ success: false, message: data.message || "Verification failed." })
+                );
+              }
+            } catch (err) {
+              window.ReactNativeWebView?.postMessage(
+                JSON.stringify({ success: false, message: "Network error during verification." })
+              );
+            }
+          }
+
+          function onTurnstileError() {
+            window.ReactNativeWebView?.postMessage(
+              JSON.stringify({ success: false, message: "CAPTCHA widget error." })
+            );
+          }
+        </script>
+      </body>
+    </html>
+  `);
+});
+
+// -----------------------------------------------------
+// VERIFY TURNSTILE TOKEN + ISSUE SHORT-LIVED JWT
+// -----------------------------------------------------
+
+app.post(
+  "/api/captcha/verify",
+  async (req: Request, res: Response) => {
+    try {
+      const { token } = req.body;
+
+      if (!token) {
+        return res.status(400).json({
+          verified: false,
+          message: "Missing CAPTCHA token.",
+        });
+      }
+
+      const ip =
+        (req.headers["x-forwarded-for"] as string) || req.ip;
+
+      const result = await verifyTurnstile(token, ip);
+
+      if (!result.success) {
+        console.log("CAPTCHA FAILED:", result);
+
+        return res.status(403).json({
+          verified: false,
+          message: "CAPTCHA verification failed.",
+        });
+      }
+
+      const captchaVerificationToken = jwt.sign(
+        { purpose: "captcha_verified" },
+        CAPTCHA_JWT_SECRET,
+        { expiresIn: "10m" }
+      );
+
+      console.log("✅ CAPTCHA VERIFIED SUCCESSFULLY");
+
+      return res.json({
+        verified: true,
+        captchaVerificationToken,
+      });
+    } catch (error) {
+      console.error("CAPTCHA VERIFY ERROR:", error);
+
+      return res.status(500).json({
+        verified: false,
+        message: "CAPTCHA verification failed due to a server error.",
+      });
+    }
+  }
+);
 
 
 // =====================================================
@@ -5239,8 +5398,7 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log("=================================");
   console.log(`Server running on port ${PORT}`);
   console.log(`Local: http://localhost:${PORT}`);
-  console.log(`Network: http://192.168.18.24:${PORT}`);
-  console.log(`API: http://192.168.18.24:${PORT}/api`);
+  console.log(`Captcha page: http://localhost:${PORT}/captcha`);
   console.log("=================================");
 });
 

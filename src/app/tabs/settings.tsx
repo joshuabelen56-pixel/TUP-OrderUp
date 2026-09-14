@@ -24,7 +24,7 @@ import { useTheme } from "../../context/ThemeContext";
    CONFIG
 ========================================================= */
 
-const API_URL = "http://192.168.18.24:5000";
+const API_URL = "https://groove-blend-charity.ngrok-free.dev";
 
 const PRIMARY = "#7D1021";
 const DARK_RED = "#5F0C19";
