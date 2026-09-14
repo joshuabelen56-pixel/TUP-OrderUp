@@ -172,6 +172,11 @@ export default function Register() {
 const [biometricEnabled, setBiometricEnabled] = useState(false);
 const [biometricAvailable, setBiometricAvailable] = useState(false);
 
+// PIN STATES
+const [pin, setPin] = useState("");
+const [confirmPin, setConfirmPin] = useState("");
+const [pinEnabled, setPinEnabled] = useState(false);
+
 
   // =====================================================
   // LOADING
@@ -210,8 +215,8 @@ const enableBiometric = async (): Promise<boolean> => {
 
     if (!hasHardware) {
       Alert.alert(
-        "Not Supported",
-        "This device does not support Face ID or fingerprint authentication."
+        "Fingerprint Not Supported",
+        "This device does not support fingerprint authentication."
       );
       return false;
     }
@@ -221,27 +226,41 @@ const enableBiometric = async (): Promise<boolean> => {
 
     if (!isEnrolled) {
       Alert.alert(
-        "Biometric Not Set Up",
-        "Please set up Face ID or fingerprint on your device first."
+        "Fingerprint Not Set Up",
+        "Please register your fingerprint in your phone Settings first."
+      );
+      return false;
+    }
+
+    const types =
+      await LocalAuthentication.supportedAuthenticationTypesAsync();
+
+    const hasFingerprint = types.includes(
+      LocalAuthentication.AuthenticationType.FINGERPRINT
+    );
+
+    if (!hasFingerprint) {
+      Alert.alert(
+        "Fingerprint Required",
+        "Fingerprint authentication is required. Face ID is not supported by TUP-OrderUp."
       );
       return false;
     }
 
     const result =
       await LocalAuthentication.authenticateAsync({
-        promptMessage: "Enable Biometric Login",
+        promptMessage: "Register your fingerprint",
         cancelLabel: "Cancel",
-        disableDeviceFallback: false,
+        disableDeviceFallback: true,
       });
 
     return result.success;
-
   } catch (error) {
-    console.error("BIOMETRIC ERROR:", error);
+    console.error("FINGERPRINT ERROR:", error);
 
     Alert.alert(
-      "Biometric Error",
-      "Unable to enable biometric authentication."
+      "Fingerprint Error",
+      "Unable to register your fingerprint."
     );
 
     return false;
@@ -249,29 +268,26 @@ const enableBiometric = async (): Promise<boolean> => {
 };
 
 // =====================================================
-// CHECK BIOMETRIC AVAILABILITY
+// CHECK FINGERPRINT AVAILABILITY
 // =====================================================
 
 useEffect(() => {
-  const checkBiometricAvailability = async () => {
+  const checkFingerprintAvailability = async () => {
     try {
-      const hasHardware =
-        await LocalAuthentication.hasHardwareAsync();
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+      const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
+      const hasFingerprint = types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT);
 
-      const isEnrolled =
-        await LocalAuthentication.isEnrolledAsync();
-
-      setBiometricAvailable(
-        hasHardware && isEnrolled
-      );
+      setBiometricAvailable(hasHardware && isEnrolled && hasFingerprint);
     } catch (error) {
-      console.error("BIOMETRIC CHECK ERROR:", error);
+      console.error("FINGERPRINT CHECK ERROR:", error);
       setBiometricAvailable(false);
     }
   };
 
-  checkBiometricAvailability();
-});
+  checkFingerprintAvailability();
+}, []);
 
 
 
@@ -864,6 +880,38 @@ if (
       Alert.alert(
         "Password Mismatch",
         "Your passwords do not match."
+      );
+      return false;
+    }
+
+    // ===================================================
+    // ACCOUNT SECURITY METHOD
+    // ===================================================
+
+
+
+    if (!/^\d{6}$/.test(pin)) {
+      Alert.alert("Invalid PIN", "Your PIN must contain exactly 6 digits.");
+      return false;
+    }
+
+    if (pin !== confirmPin) {
+      Alert.alert("PIN Mismatch", "Your PIN and confirmation PIN do not match.");
+      return false;
+    }
+
+    if (!biometricEnabled) {
+      Alert.alert(
+        "Fingerprint Required",
+        "Please register and verify your fingerprint before completing registration."
+      );
+      return false;
+    }
+
+    if (!pinEnabled) {
+      Alert.alert(
+        "PIN Required",
+        "Please create and confirm your 6-digit PIN before completing registration."
       );
       return false;
     }
@@ -1657,6 +1705,30 @@ console.log(
         );
       }
 
+      // =================================================
+      // SAVE SECURITY METHOD LOCALLY
+      // =================================================
+      if (data?.userId) {
+        if (biometricEnabled) {
+          await SecureStore.setItemAsync(
+            `tuporderup_security_method_${data.userId}`,
+            "fingerprint"
+          );
+          await SecureStore.deleteItemAsync(
+            `tuporderup_pin_${data.userId}`
+          );
+        } else if (pinEnabled) {
+          await SecureStore.setItemAsync(
+            `tuporderup_security_method_${data.userId}`,
+            "pin"
+          );
+          await SecureStore.setItemAsync(
+            `tuporderup_pin_${data.userId}`,
+            pin
+          );
+        }
+      }
+
 
 // =================================================
 // SUCCESS → OTP PAGE
@@ -1725,6 +1797,10 @@ Alert.alert(
       // Password
       setPassword("");
       setConfirmPassword("");
+      setPin("");
+      setConfirmPin("");
+      setPinEnabled(false);
+      setBiometricEnabled(false);
 
       setShowPassword(false);
       setShowConfirmPassword(false);
@@ -3181,74 +3257,118 @@ Alert.alert(
 
 
 {/* =====================================================
-    BIOMETRIC SETUP
+    SECURITY METHOD SETUP
 ===================================================== */}
 
-{biometricAvailable && (
-  <View style={styles.biometricBox}>
+<View style={styles.securityMethodBox}>
+  <View style={styles.securityMethodHeader}>
+    <View style={styles.biometricIconCircle}>
+      <Ionicons name="shield-checkmark-outline" size={30} color="#C41E3A" />
+    </View>
+    <View style={styles.biometricHeaderText}>
+    <Text style={styles.biometricTitle}>Security Setup</Text>
+    <Text style={styles.biometricSubtitle}>
+      Fingerprint and 6-digit PIN are both required.
+    </Text>
+    </View>
+  </View>
 
-    <View style={styles.biometricTopRow}>
-      <View style={styles.biometricIconCircle}>
-        <Ionicons
-          name="finger-print-outline"
-          size={30}
-          color="#C41E3A"
+  <View style={styles.biometricDivider} />
+
+  {biometricAvailable && (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      style={[styles.securityOptionButton, biometricEnabled && styles.securityOptionButtonSelected]}
+      onPress={async () => {
+        if (loading) return;
+        const success = await enableBiometric();
+        if (success) {
+          setBiometricEnabled(true);
+          setPin("");
+          setConfirmPin("");
+          Alert.alert("Fingerprint Ready", "Fingerprint login is enabled for this device.");
+        }
+      }}
+      disabled={loading}
+    >
+      <View style={styles.securityOptionIcon}>
+        <Ionicons name="finger-print-outline" size={24} color="#C41E3A" />
+      </View>
+      <View style={styles.securityOptionText}>
+        <Text style={styles.securityOptionTitle}>Fingerprint</Text>
+        <Text style={styles.securityOptionSubtitle}>Verify using the fingerprint enrolled on this phone.</Text>
+      </View>
+      <Ionicons name={biometricEnabled ? "checkmark-circle" : "radio-button-off"} size={23} color={biometricEnabled ? "#2E7D32" : "#AAAAAA"} />
+    </TouchableOpacity>
+  )}
+
+  {!biometricAvailable && (
+    <View style={styles.unavailableBox}>
+      <Ionicons name="information-circle-outline" size={19} color="#C41E3A" />
+      <Text style={styles.unavailableText}>Fingerprint is not available on this device. Fingerprint setup is required to continue.</Text>
+    </View>
+  )}
+
+  <TouchableOpacity
+    activeOpacity={0.85}
+    style={[styles.securityOptionButton, pinEnabled && styles.securityOptionButtonSelected]}
+    onPress={() => {
+      if (loading) return;
+      setPinEnabled(true);
+    }}
+    disabled={loading}
+  >
+    <View style={styles.securityOptionIcon}>
+      <Ionicons name="keypad-outline" size={24} color="#C41E3A" />
+    </View>
+    <View style={styles.securityOptionText}>
+      <Text style={styles.securityOptionTitle}>6-Digit PIN — REQUIRED</Text>
+            <Text style={styles.securityOptionSubtitle}>
+        Create a 6-digit PIN. This is required for your account.
+      </Text>
+    </View>
+    <Ionicons name={pinEnabled ? "checkmark-circle" : "radio-button-off"} size={23} color={pinEnabled ? "#2E7D32" : "#AAAAAA"} />
+  </TouchableOpacity>
+
+  {(
+    <View style={styles.pinFieldsContainer}>
+      <Text style={styles.label}>6-DIGIT PIN *</Text>
+      <View style={styles.inputWrapper}>
+        <Ionicons name="keypad-outline" size={20} color="#777777" style={styles.inputIcon} />
+        <TextInput
+          style={styles.input}
+          placeholder="Enter 6-digit PIN"
+          placeholderTextColor="#A0A0A0"
+          value={pin}
+          onChangeText={(text) => setPin(text.replace(/\D/g, "").slice(0, 6))}
+          keyboardType="number-pad"
+          secureTextEntry
+          maxLength={6}
         />
       </View>
 
-      <View style={styles.biometricHeaderText}>
-        <Text style={styles.biometricTitle}>
-          Biometric Login
-        </Text>
-
-        <Text style={styles.biometricSubtitle}>
-          Sign in faster using Face ID or fingerprint.
-        </Text>
+      <Text style={styles.label}>CONFIRM 6-DIGIT PIN *</Text>
+      <View style={styles.inputWrapper}>
+        <Ionicons name="keypad-outline" size={20} color="#777777" style={styles.inputIcon} />
+        <TextInput
+          style={styles.input}
+          placeholder="Re-enter your 6-digit PIN"
+          placeholderTextColor="#A0A0A0"
+          value={confirmPin}
+          onChangeText={(text) => setConfirmPin(text.replace(/\D/g, "").slice(0, 6))}
+          keyboardType="number-pad"
+          secureTextEntry
+          maxLength={6}
+        />
       </View>
     </View>
+  )}
 
-    <View style={styles.biometricDivider} />
-
-    <TouchableOpacity
-      activeOpacity={0.85}
-      style={[
-        styles.biometricButton,
-        biometricEnabled && styles.biometricButtonEnabled,
-      ]}
-      onPress={async () => {
-        const success = await enableBiometric();
-
-        if (success) {
-          setBiometricEnabled(true);
-
-          Alert.alert(
-            "Biometric Ready",
-            "Your biometric authentication is ready to use when logging in."
-          );
-        }
-      }}
-    >
-      <Ionicons
-        name={
-          biometricEnabled
-            ? "checkmark-circle"
-            : "finger-print-outline"
-        }
-        size={20}
-        color="#FFFFFF"
-      />
-
-      <Text style={styles.biometricButtonText}>
-        {biometricEnabled
-          ? "Biometric Ready"
-          : "Set Up Biometric Login"}
-      </Text>
-    </TouchableOpacity>
-
+  <View style={styles.securityInfoBox}>
+    <Ionicons name="lock-closed-outline" size={18} color="#C41E3A" />
+    <Text style={styles.securityInfoText}>Your fingerprint is handled by the phone's secure biometric system. TUPC-OrderUp does not store fingerprint images.</Text>
   </View>
-)}
-
-
+</View>
 
           {/* ================================================= */}
           {/* SELLER FINAL NOTICE */}
@@ -3714,6 +3834,42 @@ const styles = StyleSheet.create({
     backgroundColor: "#F7F7F8",
   },
 
+
+  pinBox: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 18,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "#E5E5E5",
+  },
+
+  pinInput: {
+    height: 52,
+    borderWidth: 1,
+    borderColor: "#D5D5D5",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    marginTop: 12,
+    fontSize: 18,
+    color: "#222222",
+    backgroundColor: "#FAFAFA",
+    letterSpacing: 4,
+  },
+
+  pinSuccessRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+  },
+
+  pinSuccessText: {
+    marginLeft: 7,
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#2E7D32",
+  },
+
   container: {
     flexGrow: 1,
     paddingBottom: 45,
@@ -3788,6 +3944,37 @@ headerLogo: {
 // =====================================================
 // BIOMETRIC LOGIN
 // =====================================================
+
+securityMethodBox: {
+  backgroundColor: "#FFFFFF",
+  marginHorizontal: 16,
+  marginTop: 16,
+  marginBottom: 16,
+  padding: 18,
+  borderRadius: 18,
+  borderWidth: 1,
+  borderColor: "#EAEAEA",
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 3 },
+  shadowOpacity: 0.04,
+  shadowRadius: 10,
+  elevation: 2,
+},
+securityMethodHeader: { flexDirection: "row", alignItems: "center" },
+securityOptionButton: {
+  minHeight: 72, borderWidth: 1.5, borderColor: "#E1E1E1", borderRadius: 14,
+  padding: 12, flexDirection: "row", alignItems: "center", marginBottom: 10, backgroundColor: "#FAFAFA",
+},
+securityOptionButtonSelected: { borderColor: "#C41E3A", backgroundColor: "#FFF4F6" },
+securityOptionIcon: { width: 43, height: 43, borderRadius: 12, backgroundColor: "#FFF0F3", alignItems: "center", justifyContent: "center", marginRight: 11 },
+securityOptionText: { flex: 1, paddingRight: 8 },
+securityOptionTitle: { fontSize: 14, fontWeight: "800", color: "#333333" },
+securityOptionSubtitle: { fontSize: 10.5, lineHeight: 15, color: "#888888", marginTop: 3 },
+unavailableBox: { flexDirection: "row", backgroundColor: "#FFF5F7", borderRadius: 11, padding: 11, marginBottom: 10 },
+unavailableText: { flex: 1, color: "#777777", fontSize: 10.5, lineHeight: 16, marginLeft: 8 },
+pinFieldsContainer: { marginTop: 4, padding: 12, backgroundColor: "#F9F9F9", borderRadius: 13, borderWidth: 1, borderColor: "#EEEEEE", marginBottom: 10 },
+securityInfoBox: { flexDirection: "row", backgroundColor: "#F8F8F8", borderRadius: 11, padding: 11, marginTop: 4 },
+securityInfoText: { flex: 1, color: "#777777", fontSize: 10.5, lineHeight: 16, marginLeft: 8 },
 
 biometricBox: {
   backgroundColor: "#FFFFFF",
